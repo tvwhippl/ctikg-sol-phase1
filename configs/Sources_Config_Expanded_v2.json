@@ -1,0 +1,442 @@
+{
+  "domains": {
+    "www.cisa.gov": {
+      "weight": 1.0,
+      "rss": [
+        "https://www.cisa.gov/cybersecurity-advisories/all.xml"
+      ]
+    },
+    "isc.sans.edu": {
+      "weight": 0.95,
+      "rss": [
+        "https://isc.sans.edu/rssfeed_full.xml"
+      ]
+    },
+    "unit42.paloaltonetworks.com": {
+      "weight": 0.95,
+      "rss": [
+        "https://unit42.paloaltonetworks.com/feed/",
+        "https://unit42.paloaltonetworks.com/tag/threat-assessment/feed/"
+      ],
+      "indexes": [
+        {
+          "url": "https://unit42.paloaltonetworks.com/",
+          "base": "https://unit42.paloaltonetworks.com",
+          "link_pattern": "(report|threat-brief|/tag/threat-assessment/)",
+          "date_regex": "(\\d{4}|\\w+ \\d{1,2}, \\d{4})"
+        }
+      ]
+    },
+    "blog.talosintelligence.com": {
+      "weight": 0.9,
+      "rss": [
+        "https://blog.talosintelligence.com/feed/"
+      ]
+    },
+    "www.crowdstrike.com": {
+      "weight": 0.88,
+      "rss": [
+        "https://www.crowdstrike.com/blog/feed/"
+      ]
+    },
+    "www.microsoft.com": {
+      "weight": 0.9,
+      "rss": [
+        "https://www.microsoft.com/security/blog/feed/"
+      ]
+    },
+    "www.elastic.co": {
+      "weight": 0.85,
+      "rss": [
+        "https://www.elastic.co/security-labs/index.xml"
+      ]
+    },
+    "redcanary.com": {
+      "weight": 0.85,
+      "rss": [
+        "https://redcanary.com/blog/feed/"
+      ]
+    },
+    "securelist.com": {
+      "weight": 0.8,
+      "rss": [
+        "https://securelist.com/feed/"
+      ]
+    },
+    "www.wiz.io": {
+      "weight": 0.75,
+      "rss": [
+        "https://www.wiz.io/blog/rss.xml"
+      ]
+    },
+    "www.aquasec.com": {
+      "weight": 0.75,
+      "rss": [
+        "https://www.aquasec.com/blog/feed/"
+      ]
+    },
+    "krebsonsecurity.com": {
+      "weight": 0.8,
+      "rss": [
+        "https://krebsonsecurity.com/feed/"
+      ]
+    },
+    "jupyter.org": {
+      "weight": 0.8,
+      "rss": [
+        "https://blog.jupyter.org/feed"
+      ]
+    },
+    "zeek.org": {
+      "weight": 0.75,
+      "rss": [
+        "https://zeek.org/blog/feed/"
+      ]
+    },
+    "suricata.io": {
+      "weight": 0.75,
+      "rss": [
+        "https://suricata.io/feed/"
+      ]
+    },
+    "openondemand.org": {
+      "weight": 0.9,
+      "rss": [],
+      "indexes": [
+        {
+          "url": "https://openondemand.org/blog/",
+          "base": "https://openondemand.org",
+          "link_pattern": "blog",
+          "date_regex": "(\\d{4}-\\d{2}-\\d{2})"
+        }
+      ]
+    },
+    "apptainer.org": {
+      "weight": 0.9,
+      "rss": [
+        "https://apptainer.org/news/index.xml"
+      ]
+    },
+    "www.openssh.com": {
+      "weight": 0.9,
+      "rss": [],
+      "indexes": [
+        {
+          "url": "https://www.openssh.com/security.html",
+          "base": "https://www.openssh.com/",
+          "link_pattern": "security\\.html#\\d{4}",
+          "date_regex": "(\\d{4}-\\d{2}-\\d{2})"
+        },
+        {
+          "url": "https://www.openssh.com/releasenotes.html",
+          "base": "https://www.openssh.com/",
+          "link_pattern": "releasenotes\\.html#",
+          "date_regex": "(\\d{4}-\\d{2}-\\d{2})"
+        }
+      ]
+    },
+    "www.schedmd.com": {
+      "weight": 0.9,
+      "rss": [],
+      "indexes": [
+        {
+          "url": "https://www.schedmd.com/news.php",
+          "base": "https://www.schedmd.com/",
+          "link_pattern": "/news\\.php\\?",
+          "date_regex": "(\\d{4}-\\d{2}-\\d{2})"
+        }
+      ]
+    },
+    "googleprojectzero.blogspot.com": {
+      "weight": 0.75,
+      "rss": [
+        "https://googleprojectzero.blogspot.com/feeds/posts/default?alt=rss"
+      ]
+    },
+    "www.rapid7.com": {
+      "weight": 0.85,
+      "rss": [
+        "https://www.rapid7.com/blog/rss/"
+      ]
+    },
+    "www.akamai.com": {
+      "weight": 0.8,
+      "rss": [
+        "https://www.akamai.com/blog.rss"
+      ]
+    },
+    "blog.qualys.com": {
+      "weight": 0.8,
+      "rss": [
+        "https://blog.qualys.com/feed"
+      ]
+    },
+    "www.huntress.com": {
+      "weight": 0.75,
+      "rss": [
+        "https://www.huntress.com/blog/rss.xml"
+      ]
+    },
+    "www.uptycs.com": {
+      "weight": 0.75,
+      "rss": [
+        "https://www.uptycs.com/blog/rss.xml"
+      ]
+    },
+    "www.cadosecurity.com": {
+      "weight": 0.85,
+      "rss": [
+        "https://www.cadosecurity.com/blog/rss/"
+      ]
+    },
+    "sysdig.com": {
+      "weight": 0.8,
+      "rss": [
+        "https://sysdig.com/blog/feed/"
+      ]
+    },
+    "www.lacework.com": {
+      "weight": 0.75,
+      "rss": [
+        "https://www.lacework.com/blog/category/research/feed/"
+      ]
+    },
+    "www.trendmicro.com": {
+      "weight": 0.8,
+      "rss": [
+        "https://www.trendmicro.com/en_us/research/rss.xml"
+      ]
+    },
+    "www.sentinelone.com": {
+      "weight": 0.8,
+      "rss": [
+        "https://www.sentinelone.com/labs/feed/"
+      ]
+    },
+    "cloud.google.com": {
+      "weight": 0.8,
+      "rss": [
+        "https://cloud.google.com/blog/topics/threat-intelligence/rss/"
+      ]
+    },
+    "ubuntu.com": {
+      "weight": 0.85,
+      "rss": [
+        "https://ubuntu.com/security/notices/rss.xml"
+      ]
+    },
+    "access.redhat.com": {
+      "weight": 0.8,
+      "rss": [],
+      "indexes": [
+        {
+          "url": "https://access.redhat.com/blogs/product-security",
+          "base": "https://access.redhat.com",
+          "link_pattern": "blogs/product-security",
+          "date_regex": "(\\d{4}-\\d{2}-\\d{2}|\\w+ \\d{1,2}, \\d{4})"
+        }
+      ]
+    },
+    "www.suse.com": {
+      "weight": 0.75,
+      "rss": [],
+      "indexes": [
+        {
+          "url": "https://www.suse.com/support/security/",
+          "base": "https://www.suse.com",
+          "link_pattern": "support/security",
+          "date_regex": "(\\d{4}-\\d{2}-\\d{2}|\\w+ \\d{1,2}, \\d{4})"
+        }
+      ]
+    },
+    "www.beegfs.io": {
+      "weight": 0.7,
+      "rss": [
+        "https://www.beegfs.io/feed/"
+      ]
+    },
+    "lore.kernel.org": {
+      "weight": 0.7,
+      "rss": [],
+      "indexes": [
+        {
+          "url": "https://lore.kernel.org/linux-nfs/",
+          "base": "https://lore.kernel.org",
+          "link_pattern": "linux-nfs",
+          "date_regex": "(\\d{4}-\\d{2}-\\d{2})"
+        }
+      ]
+    },
+    "lists.lustre.org": {
+      "weight": 0.7,
+      "rss": [],
+      "indexes": [
+        {
+          "url": "https://lists.lustre.org/hyperkitty/list/lustre-discussion@lists.lustre.org/",
+          "base": "https://lists.lustre.org",
+          "link_pattern": "lustre-discussion",
+          "date_regex": "(\\d{4}-\\d{2}-\\d{2})"
+        }
+      ]
+    },
+    "www.schneier.com": {
+      "weight": 0.75,
+      "rss": [
+        "https://www.schneier.com/feed/"
+      ],
+      "indexes": []
+    },
+    "enterprise.verizon.com": {
+      "weight": 0.85,
+      "rss": [],
+      "indexes": [
+        {
+          "url": "https://enterprise.verizon.com/resources/reports/dbir/",
+          "base": "https://enterprise.verizon.com",
+          "link_pattern": "dbir",
+          "date_regex": "(\\d{4}|\\w+ \\d{1,2}, \\d{4})"
+        }
+      ]
+    },
+    "thedfirreport.com": {
+      "weight": 0.85,
+      "rss": [
+        "https://thedfirreport.com/feed/"
+      ],
+      "indexes": []
+    },
+    "www.troyhunt.com": {
+      "weight": 0.75,
+      "rss": [
+        "https://www.troyhunt.com/rss/"
+      ],
+      "indexes": []
+    },
+    "blog.didierstevens.com": {
+      "weight": 0.75,
+      "rss": [
+        "https://blog.didierstevens.com/feed/"
+      ],
+      "indexes": []
+    },
+    "www.sans.org": {
+      "weight": 0.8,
+      "rss": [],
+      "indexes": [
+        {
+          "url": "https://www.sans.org/reading-room/popular/week",
+          "base": "https://www.sans.org",
+          "link_pattern": "reading-room",
+          "date_regex": "(\\d{4}|\\w+ \\d{1,2}, \\d{4})"
+        }
+      ]
+    },
+    "www.darkreading.com": {
+      "weight": 0.7,
+      "rss": [
+        "https://www.darkreading.com/rss.xml"
+      ],
+      "indexes": [
+        {
+          "url": "https://www.darkreading.com/attacks-breaches",
+          "base": "https://www.darkreading.com",
+          "link_pattern": "attacks-breaches",
+          "date_regex": "(\\d{4}|\\w+ \\d{1,2}, \\d{4})"
+        },
+        {
+          "url": "https://www.darkreading.com/threat-intelligence",
+          "base": "https://www.darkreading.com",
+          "link_pattern": "threat-intelligence",
+          "date_regex": "(\\d{4}|\\w+ \\d{1,2}, \\d{4})"
+        },
+        {
+          "url": "https://www.darkreading.com/vulnerabilities-threats",
+          "base": "https://www.darkreading.com",
+          "link_pattern": "vulnerabilities-threats",
+          "date_regex": "(\\d{4}|\\w+ \\d{1,2}, \\d{4})"
+        },
+        {
+          "url": "https://www.darkreading.com/security-analytics",
+          "base": "https://www.darkreading.com",
+          "link_pattern": "security-analytics",
+          "date_regex": "(\\d{4}|\\w+ \\d{1,2}, \\d{4})"
+        }
+      ]
+    },
+    "www.fireeye.com": {
+      "weight": 0.75,
+      "rss": [],
+      "indexes": [
+        {
+          "url": "https://www.fireeye.com/current-threats/threat-intelligence-reports.html",
+          "base": "https://www.fireeye.com",
+          "link_pattern": "threat",
+          "date_regex": "(\\d{4}|\\w+ \\d{1,2}, \\d{4})"
+        },
+        {
+          "url": "https://www.fireeye.com/blog/threat-research.html",
+          "base": "https://www.fireeye.com",
+          "link_pattern": "blog",
+          "date_regex": "(\\d{4}|\\w+ \\d{1,2}, \\d{4})"
+        },
+        {
+          "url": "https://www.fireeye.com/current-threats/apt-groups.html",
+          "base": "https://www.fireeye.com",
+          "link_pattern": "apt",
+          "date_regex": "(\\d{4}|\\w+ \\d{1,2}, \\d{4})"
+        }
+      ]
+    },
+    "www.theregister.com": {
+      "weight": 0.65,
+      "rss": [
+        "https://www.theregister.com/security/headlines.atom"
+      ],
+      "indexes": []
+    },
+    "threatpost.com": {
+      "weight": 0.65,
+      "rss": [
+        "https://threatpost.com/feed/"
+      ],
+      "indexes": []
+    },
+    "www.zdnet.com": {
+      "weight": 0.65,
+      "rss": [
+        "https://www.zdnet.com/topic/security/rss.xml"
+      ],
+      "indexes": []
+    },
+    "www.scmagazine.com": {
+      "weight": 0.65,
+      "rss": [
+        "https://www.scmagazine.com/feed"
+      ],
+      "indexes": []
+    },
+    "www.bankinfosecurity.com": {
+      "weight": 0.7,
+      "rss": [
+        "https://www.bankinfosecurity.com/rss",
+        "https://www.bankinfosecurity.com/rss-feeds"
+      ],
+      "indexes": []
+    },
+    "www.infosecurity-magazine.com": {
+      "weight": 0.7,
+      "rss": [
+        "https://www.infosecurity-magazine.com/rss/"
+      ],
+      "indexes": []
+    },
+    "www.bleepingcomputer.com": {
+      "weight": 0.7,
+      "rss": [
+        "https://www.bleepingcomputer.com/feed/"
+      ],
+      "indexes": []
+    }
+  },
+  "domain_keyword_boosts": {}
+}

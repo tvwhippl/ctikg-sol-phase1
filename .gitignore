@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.DS_Store
+
+# raw/scratch
+batch*.csv
+Links_Queue.csv
+Links_Queue_sorted.csv
+
+# scraped artifacts (future phases)
+pdf/
+txt/
+cache/
