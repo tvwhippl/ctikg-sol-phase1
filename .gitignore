@@ -11,3 +11,7 @@ Links_Queue_sorted.csv
 pdf/
 txt/
 cache/
+
+scraper_cache*
+
+artifacts/
