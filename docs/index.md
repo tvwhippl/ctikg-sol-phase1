@@ -2,7 +2,7 @@
 
 **Project:** CIREN Facilitator — CTI Knowledge Graph (CTIKG) bootstrapping for SOL HPC security
 
-**Authors:** (you + collaborators)
+**Authors:** Trevor Whipple + ChatGPT 5 Thinking
 
 **Date:** auto-generated
 
