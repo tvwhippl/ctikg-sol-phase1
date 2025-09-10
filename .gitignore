@@ -15,3 +15,7 @@ cache/
 scraper_cache*
 
 artifacts/
+
+artifacts/**
+!artifacts/.gitkeep
+scraper_cache.sqlite
