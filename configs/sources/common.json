@@ -1,0 +1,22 @@
+{
+  "rss": [
+    {"url":"https://github.blog/feed/"},
+    {"url":"https://unit42.paloaltonetworks.com/feed/"},
+    {"url":"https://blog.talosintelligence.com/feed/"},
+    {"url":"https://www.crowdstrike.com/blog/feed/"},
+    {"url":"https://www.trendmicro.com/en_us/research/rss/all.xml"},
+    {"url":"https://research.nccgroup.com/feed/"},
+    {"url":"https://snyk.io/blog/feed/"},
+    {"url":"https://jfrog.com/blog/feed/"},
+    {"url":"https://blog.gitguardian.com/rss/"},
+    {"url":"https://www.bleepingcomputer.com/feed/"},
+    {"url":"https://www.theregister.com/security/headlines.atom"},
+    {"url":"https://www.bankinfosecurity.com/rss-feeds"},
+    {"url":"https://www.zdnet.com/topic/security/rss.xml"},
+    {"url":"https://ubuntu.com/security/notices/rss.xml"},
+    {"url":"https://cloud.google.com/blog/topics/threat-intelligence/rss/"},
+    {"url":"https://access.redhat.com/blogs/product-security.atom"},
+    {"url":"https://www.suse.com/support/security/rss.xml"},
+    {"url":"https://www.elastic.co/security-labs/index.xml"}
+  ]
+}
