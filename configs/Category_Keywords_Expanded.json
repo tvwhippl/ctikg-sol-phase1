@@ -1,10 +1,14 @@
 {
   "CI/CD Pipeline Attacks": {
-  "include": [
-    "github actions", "gitlab ci", "jenkins", "azure pipelines", "workflow", "runner",
-    "artifact poisoning", "cache poisoning", "oidc", "federation", "oidc trust",
-    "self-hosted runner", "workflow injection", "supply chain", "secrets exposure"
-  ],
+"include": [
+  "ci/cd", "ci-cd", "ci cd", "cicd",
+  "github actions", "actions runner", "self-hosted runner", "actions cache",
+  "gitlab ci", "gitlab runner", "jenkins", "jenkins pipeline",
+  "azure pipelines", "azure devops", "ado pipelines",
+  "workflow injection", "malicious workflow", "artifact poisoning", "cache poisoning",
+  "oidc", "oidc federation", "github oidc",
+  "secrets exposure", "supply chain", "build pipeline"
+],
   "exclude": ["tutorial", "how to", "marketing", "press release", "job posting"],
   "notes": "Focus on CI/CD abuse (runner/oidc/artifacts/secrets). Prioritize incident writeups, IR blogs, advisories."
 }
