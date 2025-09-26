@@ -1,4 +1,13 @@
 {
+  "CI/CD Pipeline Attacks": {
+  "include": [
+    "github actions", "gitlab ci", "jenkins", "azure pipelines", "workflow", "runner",
+    "artifact poisoning", "cache poisoning", "oidc", "federation", "oidc trust",
+    "self-hosted runner", "workflow injection", "supply chain", "secrets exposure"
+  ],
+  "exclude": ["tutorial", "how to", "marketing", "press release", "job posting"],
+  "notes": "Focus on CI/CD abuse (runner/oidc/artifacts/secrets). Prioritize incident writeups, IR blogs, advisories."
+}
   "SSH & Credential Abuse": {
     "include": [
       "ssh",
