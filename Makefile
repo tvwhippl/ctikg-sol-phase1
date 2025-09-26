@@ -18,3 +18,29 @@ export-ctikg:
 	$(PY) scripts/export_ctikg_input.py --in_jsonl results/scraped_corpus.jsonl --out_csv data/ctikg_input.csv --out_docs data/ctikg_docs_meta.jsonl
 
 .PHONY: scrape verify-scrape export-ctikg
+
+# -------- Scrape / Chunk / Export (Phase B) --------
+CATEGORY ?=
+RATE ?= 1.0
+TIMEOUT ?= 12
+
+scrape:
+	python3 scripts/scrape_selected.py \
+		--winners data/Links_Queue_with_selected.csv \
+		$(if $(CATEGORY),--category "$(CATEGORY)",) \
+		--outdir content --rate $(RATE) --timeout $(TIMEOUT)
+
+chunk:
+	python3 scripts/chunk_articles.py \
+		$(if $(CATEGORY),--category "$(CATEGORY)",) \
+		--indir content/text --outdir chunks
+
+export-ctikg:
+	python3 scripts/export_for_ctikg.py --chunks_dir chunks --out exports
+
+# One-shot pipeline including your existing rank/merge/flags/select
+quickstart:
+	$(MAKE) all
+	$(MAKE) scrape $(if $(CATEGORY),CATEGORY="$(CATEGORY)",)
+	$(MAKE) chunk $(if $(CATEGORY),CATEGORY="$(CATEGORY)",)
+	$(MAKE) export-ctikg
