@@ -1,3 +1,5 @@
+include open_topic.mk
+
 SHELL := /bin/bash
 .ONESHELL:
 .SHELLFLAGS := -eo pipefail -c
@@ -61,5 +63,3 @@ topic-export:
 
 # One-shot
 topic: topic-gen topic-pull topic-select topic-scrape topic-chunk topic-export
-
-include open_topic.mk
