@@ -27,3 +27,9 @@ exports/
 configs/categories/_generated/
 *.csv
 !data/sources/*.csv
+
+# keep empty run dirs (structure only)
+!results/.gitkeep
+!exports/.gitkeep
+!artifacts/.gitkeep
+!configs/categories/_generated/.gitkeep
