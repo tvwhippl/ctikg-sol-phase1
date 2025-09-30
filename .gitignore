@@ -33,3 +33,6 @@ configs/categories/_generated/
 !exports/.gitkeep
 !artifacts/.gitkeep
 !configs/categories/_generated/.gitkeep
+
+data/Links_Queue*.csv
+data/ctikg_docs_meta.json
