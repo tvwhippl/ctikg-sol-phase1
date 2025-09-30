@@ -39,6 +39,34 @@ PY) && \
 		--throttle_sec $${THROTTLE_SEC}
 
 topic-scrape: topic-select
+	@CAT=$$(ls -t configs/categories/_generated/*.yaml | head -n1) && \
+	CATNAME=$$(python3 - <<'PY' "$$CAT"
+import yaml,sys,re; print(re.sub(r'[^A-Za-z0-9]+','_',yaml.safe_load(open(sys.argv[1]))['name']).strip('_'))
+PY
+) && \
+	if python3 scripts/scrape_selected.py -h 2>&1 | grep -q -- '--in_path'; then \
+		echo "[scrape] using NEW CLI"; \
+		python3 scripts/scrape_selected.py \
+			--in_path data/Selected_$${CATNAME}.csv \
+			--out_log_csv results/scrape_log.csv \
+			--jsonl results/scraped_corpus.jsonl \
+			--artifacts artifacts \
+			--max_per_category $$(WINNERS) \
+			--concurrency $$(CONCURRENCY) \
+			--ignore_robots \
+			--throttle_sec $$(THROTTLE_SEC); \
+	else \
+		echo "[scrape] using OLD CLI"; \
+		python3 scripts/scrape_selected.py \
+			--in data/Selected_$${CATNAME}.csv \
+			--out results/scrape_log.csv \
+			--jsonl results/scraped_corpus.jsonl \
+			--artifacts artifacts \
+			--max_per_category $$(WINNERS) \
+			--concurrency $$(CONCURRENCY) \
+			--ignore_robots \
+			--throttle_sec $$(THROTTLE_SEC); \
+	fi
 
 topic-chunk:
 	CAT=$$(ls -t configs/categories/_generated/*.yaml | head -n1) && \
