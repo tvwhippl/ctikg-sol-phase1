@@ -17,8 +17,9 @@ topic-gen:
 	python3 scripts/gen_category_from_llm.py --topic "$(TOPIC)" --provider "$${LLM_PROVIDER:-ollama}" --model "$${LLM_MODEL:-llama3.1}"
 
 topic-pull:
+	@[ -f data/Links_Queue_master.csv ] || printf 'url\n' > data/Links_Queue_master.csv
 	python3 scripts/pre_rank_links_v3.py --sources "$(SOURCES)" --categories configs/Category_Keywords_Expanded.json --out batch_topic.csv --limit_per_feed 600 --half_life_days 9999 --verbose
-	python3 scripts/merge_dedupe.py data/Links_Queue_master.csv data/Links_Queue.csv batch_topic.csv
+	python3 scripts/merge_dedup.py data/Links_Queue_master.csv data/Links_Queue.csv batch_topic.csv
 	python3 scripts/make_helper_flags.py data/Links_Queue.csv
 
 # Pick most-recent YAML and compute a safe CATNAME
