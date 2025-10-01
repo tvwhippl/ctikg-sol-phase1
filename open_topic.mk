@@ -1,84 +1,89 @@
-# ---- Open-topic overrides (uses hard tabs) ----
-SOURCES ?= configs/sources/common.json
-RATE ?= 1.0
-TIMEOUT ?= 12
-WINNERS ?= 150
-CONCURRENCY ?= 4
-THROTTLE_SEC ?= 0
+# ---------- Open-topic pipeline (Ollama) ----------
+# This file is safe to edit on GitHub Web: recipes use '>' instead of hard tabs.
+# Requires GNU make.
 
-.PHONY: topic-setup topic-gen topic-pull topic-select topic-scrape topic-chunk topic-export
+SHELL := /bin/bash
+.SHELLFLAGS := -eu -o pipefail -c
+.RECIPEPREFIX := >
 
+# Defaults (override on the CLI like: make topic-pull SOURCES=configs/sources/common.json)
+SOURCES       ?= configs/sources/common.json
+RATE          ?= 12
+TIMEOUT       ?= 7
+WINNERS       ?= 150
+CONCURRENCY   ?= 4
+THROTTLE_SEC  ?= 0
+IGNORE_ROBOTS ?= 1
+PY            ?= python3
+
+# LLM defaults (override if needed)
+LLM_PROVIDER  ?= ollama
+LLM_MODEL     ?= llama3.1
+
+.PHONY: topic-setup topic-gen topic-pull topic-select topic-scrape topic-chunk topic-export topic-all
+
+# Create run dirs & .gitkeep placeholders (so directories exist even though they're gitignored)
 topic-setup:
-	mkdir -p results artifacts exports configs/categories/_generated content/text chunks
-	: > results/.gitkeep; : > artifacts/.gitkeep; : > exports/.gitkeep; : > configs/categories/_generated/.gitkeep || true
+> mkdir -p results artifacts exports configs/categories/_generated content/text chunks data
+> : > results/.gitkeep
+> : > artifacts/.gitkeep
+> : > configs/categories/_generated/.gitkeep
 
+# 1) Generate a category YAML from an LLM topic prompt
+#    Usage: make topic-gen TOPIC="ci/cd runner poisoning via OIDC & self-hosted actions"
 topic-gen:
-	@[ -n "$(TOPIC)" ] || ( echo "Set TOPIC= (e.g. TOPIC='ci/cd runner poisoning via OIDC & self-hosted actions')"; exit 2 )
-	python3 scripts/gen_category_from_llm.py --topic "$(TOPIC)" --provider "$${LLM_PROVIDER:-ollama}" --model "$${LLM_MODEL:-llama3.1}"
+> [ -n "$(TOPIC)" ] || { echo "Set TOPIC=... (e.g. TOPIC='ci/cd runner poisoning via OIDC & self-hosted actions')"; exit 2; }
+> $(PY) scripts/gen_category_from_llm.py --topic "$(TOPIC)" --provider "$(LLM_PROVIDER)" --model "$(LLM_MODEL)"
 
+# 2) Pull links and build the queue
 topic-pull:
-	@[ -f data/Links_Queue_master.csv ] || printf 'url\n' > data/Links_Queue_master.csv
-	python3 scripts/pre_rank_links_v3.py --sources "$(SOURCES)" --categories configs/Category_Keywords_Expanded.json --out batch_topic.csv --limit_per_feed 600 --half_life_days 9999 --verbose
-	python3 scripts/merge_dedup.py data/Links_Queue_master.csv data/Links_Queue.csv batch_topic.csv
-	python3 scripts/make_helper_flags.py data/Links_Queue.csv
+> $(PY) scripts/pre_rank_links_v3.py --sources "$(SOURCES)" --categories configs/Category_Keywords_Expanded.json --out batch_topic.csv --limit_per_feed 600 --half_life_days 9999 --verbose
+> $(PY) scripts/merge_dedupe.py data/Links_Queue_master.csv data/Links_Queue.csv batch_topic.csv
+> $(PY) scripts/make_helper_flags.py data/Links_Queue.csv
 
-# Pick most-recent YAML and compute a safe CATNAME
+# Helper to compute latest generated category file and sanitized name
+# - Emits CAT (path to yaml) and CATNAME (safe name)
+define _cat_eval
+CAT="$$(ls -t configs/categories/_generated/*.yaml | head -n1)"; \
+[ -n "$$CAT" ] || { echo "No generated category YAML found in configs/categories/_generated/"; exit 2; }; \
+CATNAME="$$( $(PY) -c "import yaml,sys,re; p=sys.argv[1]; print(re.sub(r'[^A-Za-z0-9]+','_',yaml.safe_load(open(p))['name']).strip('_'))" $$CAT )"
+endef
+
+# 3) Select winners for the latest category
 topic-select:
-	CAT=$$(ls -t configs/categories/_generated/*.yaml | head -n1) && \
-	CATNAME=$$(python3 - <<'PY' $$CAT \
-import yaml,sys,re; p=sys.argv[1]; print(re.sub(r'[^A-Za-z0-9]+','_',yaml.safe_load(open(p))['name']).strip('_')) \
-PY) && \
-	python3 scripts/category_select.py --in data/Links_Queue_sorted_flags.csv --category $$CAT && \
-	python3 scripts/scrape_selected.py \
-		--in_path data/Selected_$${CATNAME}.csv \
-		--out LOG_CSV results/scrape_log.csv \
-		--jsonl results/scraped_corpus.jsonl \
-		--artifacts artifacts \
-		--max_per_category $${WINNERS} \
-		--concurrency $${CONCURRENCY} \
-		--ignore_robots \
-		--throttle_sec $${THROTTLE_SEC}
+> @$(call _cat_eval)
+> echo "Selecting with $$CATNAME"
+> $(PY) scripts/category_select.py --in data/Links_Queue_sorted_flags.csv --category $$CAT
 
-topic-scrape: topic-select
-	@CAT=$$(ls -t configs/categories/_generated/*.yaml | head -n1) && \
-	CATNAME=$$(python3 - <<'PY' "$$CAT"
-import yaml,sys,re; print(re.sub(r'[^A-Za-z0-9]+','_',yaml.safe_load(open(sys.argv[1]))['name']).strip('_'))
-PY
-) && \
-	if python3 scripts/scrape_selected.py -h 2>&1 | grep -q -- '--in_path'; then \
-		echo "[scrape] using NEW CLI"; \
-		python3 scripts/scrape_selected.py \
-			--in_path data/Selected_$${CATNAME}.csv \
-			--out_log_csv results/scrape_log.csv \
-			--jsonl results/scraped_corpus.jsonl \
-			--artifacts artifacts \
-			--max_per_category $$(WINNERS) \
-			--concurrency $$(CONCURRENCY) \
-			--ignore_robots \
-			--throttle_sec $$(THROTTLE_SEC); \
-	else \
-		echo "[scrape] using OLD CLI"; \
-		python3 scripts/scrape_selected.py \
-			--in data/Selected_$${CATNAME}.csv \
-			--out results/scrape_log.csv \
-			--jsonl results/scraped_corpus.jsonl \
-			--artifacts artifacts \
-			--max_per_category $$(WINNERS) \
-			--concurrency $$(CONCURRENCY) \
-			--ignore_robots \
-			--throttle_sec $$(THROTTLE_SEC); \
-	fi
+# 4) Scrape winners -> results/scraped_corpus.jsonl (+ artifacts, log)
+#    New CLI: requires --in_path and --out (log csv). --jsonl is output jsonl path.
+topic-scrape:
+> @$(call _cat_eval)
+> echo "Scraping $$CATNAME (max $(WINNERS))"
+> if [ "$(IGNORE_ROBOTS)" -eq 1 ]; then IR=--ignore_robots; else IR=; fi; \
+  $(PY) scripts/scrape_selected.py \
+    --in_path data/Selected_$$CATNAME.csv \
+    --jsonl results/scraped_corpus.jsonl \
+    --out results/scrape_log.csv \
+    --artifacts artifacts \
+    --max_per_category $(WINNERS) \
+    --concurrency $(CONCURRENCY) \
+    $$IR \
+    --throttle_sec $(THROTTLE_SEC)
 
+# 5) (Optional) Write plaintext chunks, then export CTI-KG inputs and doc metadata
 topic-chunk:
-	CAT=$$(ls -t configs/categories/_generated/*.yaml | head -n1) && \
-	CATNAME=$$(python3 - <<'PY' $$CAT \
-import yaml,sys,re; p=sys.argv[1]; print(re.sub(r'[^A-Za-z0-9]+','_',yaml.safe_load(open(p))['name']).strip('_')) \
-PY) && \
-	python3 scripts/chunk_articles.py --category $$CATNAME --indir content/text --outdir chunks || true && \
-	python3 scripts/export_ctikg_input.py \
-		--in_jsonl results/scraped_corpus.jsonl \
-		--out_csv exports/ctikg_input.csv \
-		--out_docs data/ctikg_docs_meta.json
+> @$(call _cat_eval)
+> echo "Chunking plaintext (ok if content/text is empty; step is optional)"
+> $(PY) scripts/chunk_articles.py --category $$CATNAME --indir content/text --outdir chunks || true
+> $(PY) scripts/export_ctikg_input.py \
+    --in_jsonl results/scraped_corpus.jsonl \
+    --out_csv exports/ctikg_input.csv \
+    --out_docs data/ctikg_docs_meta.json
+> ls -lh exports/ctikg_input.csv data/ctikg_docs_meta.json
 
-# export is an alias for readability
+# Alias kept for readability
 topic-export: topic-chunk
+
+# Convenience: full run (requires TOPIC=...)
+topic-all: topic-setup topic-gen topic-pull topic-select topic-scrape topic-chunk
