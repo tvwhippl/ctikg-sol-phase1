@@ -53,21 +53,21 @@ topic-select:
 	@echo "Selecting with $$CATNAME"
 	@$(PY) scripts/category_select.py --in data/Links_Queue_sorted_flags.csv --category $$CAT
 
-# 4) Scrape winners -> results/scraped_corpus.jsonl (+ artifacts, log)
-#    New CLI: requires --in_path and --out (log csv). --jsonl is output jsonl path.
+# 4) Scrape winners → results/scraped_corpus.jsonl (+ artifacts, log)
+#    New CLI: requires --in (selected.csv) and --out (log csv). --jsonl is output jsonl path.
 topic-scrape:
-	@$(call _cat_eval)
-	@echo "Scraping $$CATNAME (max $(WINNERS))"
-	@IR= ; [ "$(IGNORE_ROBOTS)" = "1" ] && IR=--ignore_robots ; \
+	$(call _cat_eval)
+	echo "Scraping $$CATNAME (max $(WINNERS))"
 	$(PY) scripts/scrape_selected.py \
-	  --in_path data/Selected_$$CATNAME.csv \
-	  --jsonl results/scraped_corpus.jsonl \
-	  --out results/scrape_log.csv \
-	  --artifacts artifacts \
-	  --max_per_category $(WINNERS) \
-	  --concurrency $(CONCURRENCY) \
-	  $$IR \
-	  --throttle_sec $(THROTTLE_SEC)
+		--in data/Selected_$$CATNAME.csv \
+		--jsonl results/scraped_corpus.jsonl \
+		--out results/scrape_log.csv \
+		--artifacts artifacts \
+		--max_per_category $(WINNERS) \
+		--concurrency $(CONCURRENCY) \
+	$(if $(filter 1,$(IGNORE_ROBOTS)),--ignore_robots,) \
+		--throttle_sec $(THROTTLE_SEC)
+
 
 # 5) (Optional) Write plaintext chunks, then export CTI-KG inputs and doc metadata
 topic-chunk:
