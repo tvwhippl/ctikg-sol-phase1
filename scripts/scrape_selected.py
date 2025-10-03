@@ -43,6 +43,30 @@ import pandas as pd
 from urllib import robotparser
 from tqdm import tqdm
 
+# --- begin compat helper (accept 'url'/'URL'/'link' etc.) ---
+def _normalize_cols_for_pipeline(df):
+    """
+    Normalize the Selected CSV so the rest of the code can keep using:
+      - 'URL' (uppercase) for the link column
+      - 'category' (lowercase) for the category column
+    Accepts common variants like: url/URL/Url/link, category/Category/cat.
+    """
+    # case-insensitive lookup: lower-name -> original-name
+    lower2orig = {c.lower(): c for c in df.columns}
+
+    def rename_first(aliases, target):
+        if target in df.columns:
+            return
+        for a in aliases:
+            if a.lower() in lower2orig:
+                df.rename(columns={lower2orig[a.lower()]: target}, inplace=True)
+                break
+
+    rename_first(["url", "Url", "URL", "link", "Link"], "URL")
+    rename_first(["category", "Category", "cat", "Cat"], "category")
+    return df
+# --- end compat helper ---
+
 UA = os.environ.get("SCRAPER_USER_AGENT", "ctikg-sol-phase1/0.1 (+https://github.com)")
 
 def mk_dirs(base):
@@ -140,7 +164,9 @@ def main():
     artifacts = mk_dirs(args.artifacts)
     Path("results").mkdir(exist_ok=True)
 
-    df = pd.read_csv(args.in_path)
+   df = pd.read_csv(args.in_path)
+df = _normalize_cols_for_pipeline(df)  # <- ensure 'URL' and 'category' exist
+assert "URL" in df.columns, "Selected CSV must contain a URL column (URL/url/link)"
     if "Status" in df.columns:
         df = df[df["Status"].astype(str).str.lower() == "selected"]
     if "Category_Guess" not in df.columns:
