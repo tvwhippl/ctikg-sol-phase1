@@ -3,7 +3,8 @@
 Phase-1 exporter (open-topic):
 - Writes exports/ctikg_input.csv with a `sentence` column
 - Primary: read text from results/scraped_corpus.jsonl (keys: text/content/txt_path)
-- Fallback: if 0 rows, read results/scrape_log.csv (keys: txt_path,status,URL,category,title,source_domain)
+- Fallback: if no rows, read results/scrape_log.csv (keys: txt_path, URL, category, title, source_domain).
+  We accept any row that has an existing txt_path, regardless of status.
 """
 import argparse, csv, json, os, re, sys
 from pathlib import Path
@@ -33,27 +34,29 @@ def read_text_from_row(rec: dict) -> str:
     if t:
         return t
     p = rec.get("txt_path")
-    if p and os.path.isfile(p):
-        try:
-            with open(p, "r", encoding="utf-8", errors="ignore") as fh:
-                return fh.read()
-        except Exception:
-            return ""
+    if p:
+        # resolve relative paths too
+        if not os.path.isabs(p):
+            p = os.path.join(".", p)
+        if os.path.isfile(p):
+            try:
+                with open(p, "r", encoding="utf-8", errors="ignore") as fh:
+                    return fh.read()
+            except Exception:
+                return ""
     return ""
 
-def write_rows(rows_iter, writer, docs_meta):
+def write_rows(rows_iter, writer, meta):
     rows_written = 0
     for payload in rows_iter:
         text = payload["text"]
-        url  = payload.get("url","")
-        cat  = payload.get("category","")
-        tit  = payload.get("title","")
-        dom  = payload.get("source_domain","")
         sents = sent_split(text)
         if not sents:
             continue
-        docs_meta["docs"] += 1
-        docs_meta["sources"][dom] = docs_meta["sources"].get(dom, 0) + 1
+        url = payload.get("url",""); cat = payload.get("category",""); tit = payload.get("title","")
+        dom = payload.get("source_domain","")
+        meta["docs"] += 1
+        meta["sources"][dom] = meta["sources"].get(dom, 0) + 1
         for s in sents:
             writer.writerow({"sentence": s, "url": url, "category": cat, "title": tit, "source_domain": dom})
             rows_written += 1
@@ -85,11 +88,12 @@ def from_log_csv(log_path: Path):
     with open(log_path, "r", encoding="utf-8", newline="") as cf:
         rdr = csv.DictReader(cf)
         for rec in rdr:
-            status = (rec.get("status","") or "").lower()
-            if status not in ("ok","200","success",""):
+            p = (rec.get("txt_path") or "").strip()
+            if not p:
                 continue
-            p = rec.get("txt_path") or ""
-            if not p or not os.path.isfile(p):
+            if not os.path.isabs(p):
+                p = os.path.join(".", p)
+            if not os.path.isfile(p):
                 continue
             try:
                 with open(p, "r", encoding="utf-8", errors="ignore") as fh:
@@ -119,18 +123,18 @@ def main():
     out_csv.parent.mkdir(parents=True, exist_ok=True)
     out_docs.parent.mkdir(parents=True, exist_ok=True)
 
-    docs_meta = {"docs": 0, "rows": 0, "sources": {}}
+    meta = {"docs": 0, "rows": 0, "sources": {}}
 
     with open(out_csv, "w", encoding="utf-8", newline="") as fout:
         w = csv.DictWriter(fout, fieldnames=["sentence","url","category","title","source_domain"])
         w.writeheader()
-        rows_written = write_rows(from_jsonl(in_path), w, docs_meta)
+        rows_written = write_rows(from_jsonl(in_path), w, meta)
         if rows_written == 0:
-            rows_written = write_rows(from_log_csv(log_path), w, docs_meta)
+            rows_written = write_rows(from_log_csv(log_path), w, meta)
 
-    docs_meta["rows"] = rows_written
+    meta["rows"] = rows_written
     with open(out_docs, "w", encoding="utf-8") as md:
-        json.dump(docs_meta, md, ensure_ascii=False, indent=2)
+        json.dump(meta, md, ensure_ascii=False, indent=2)
 
     print(f"[OK] wrote {rows_written} rows -> {out_csv} and docs meta -> {out_docs}")
 
