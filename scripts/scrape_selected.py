@@ -197,12 +197,9 @@ assert "URL" in df.columns, "Selected CSV must contain a URL column (URL/url/lin
 
 # prepare outputs
   log_f = open(args.out_csv, "w", newline="", encoding="utf-8")
-  log_w = csv.DictWriter(log_f, fieldnames=[
-    "url", "status", "reason", "category", "source_domain",
-    "title", "publish_date",
-    "txt_path", "html_path", "pdf_path",
-    "sha256", "bytes", "fetched_at"
-  ])
+  log_w = csv.DictWriter(log_f, fieldnames=["url","status","reason","category","source_domain","title","publish_date",
+ "txt_path","html_path","pdf_path","sha256","bytes","fetched_at"]
+)
   log_w.writeheader()
 
   jsonl_f = open(args.jsonl_path, "a", encoding="utf-8")
