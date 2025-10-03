@@ -1,24 +1,24 @@
 #!/usr/bin/env python3
-# Minimal chunker: optional step; no-op if content/text is empty.
-
-import argparse, os, json, pathlib, re, sys
+import argparse, json, os, pathlib, re, sys
 
 def iter_texts(indir: str):
     for root, _, files in os.walk(indir):
-        for f in files:
-            if f.lower().endswith((".txt", ".md", ".html")):
-                p = os.path.join(root, f)
+        for name in files:
+            if name.lower().endswith((".txt", ".md", ".html")):
+                path = os.path.join(root, name)
                 try:
-                    with open(p, "r", encoding="utf-8", errors="ignore") as fh:
-                        yield p, fh.read()
+                    with open(path, "r", encoding="utf-8", errors="ignore") as fh:
+                        yield path, fh.read()
                 except Exception as e:
-                    print(f"[WARN] couldn't read {p}: {e}", file=sys.stderr)
+                    print(f"[WARN] couldn't read {path}: {e}", file=sys.stderr)
 
 def chunk_text(t: str, target: int = 600, overlap: int = 50):
     t = re.sub(r"\s+", " ", t).strip()
     if not t:
         return []
-    out, n, i = [], len(t), 0
+    out = []
+    n = len(t)
+    i = 0
     while i < n:
         j = min(i + target, n)
         # try to end on punctuation if reasonably close
@@ -37,12 +37,13 @@ def main():
     args = ap.parse_args()
 
     os.makedirs(args.outdir, exist_ok=True)
-# sanitize filename so slashes/spaces don't create subfolders
-safe = re.sub(r"[^A-Za-z0-9]+", "_", args.category).strip("_")
-outpath = pathlib.Path(args.outdir) / f"{safe}.jsonl"
+    # sanitize filename so slashes/spaces don't create subfolders
+    safe = re.sub(r"[^A-Za-z0-9]+", "_", args.category).strip("_")
+    outpath = pathlib.Path(args.outdir) / f"{safe}.jsonl"
 
     if not os.path.isdir(args.indir):
-        print(f"[info] no indir '{args.indir}' – skipping chunking.")
+        print(f"[info] no indir '{args.indir}' - skipping chunking.")
+        # still create an empty file so downstream steps succeed
         outpath.touch()
         return 0
 
@@ -50,9 +51,10 @@ outpath = pathlib.Path(args.outdir) / f"{safe}.jsonl"
     with open(outpath, "w", encoding="utf-8") as out:
         for doc_id, text in iter_texts(args.indir):
             for k, ch in enumerate(chunk_text(text)):
-                out.write(json.dumps({"category": args.category, "doc_id": doc_id, "chunk_id": k, "text": ch}, ensure_ascii=False) + "\n")
+                row = {"category": args.category, "doc_id": doc_id, "chunk_id": k, "text": ch}
+                out.write(json.dumps(row, ensure_ascii=False) + "\n")
                 total += 1
-    print(f"[done] wrote {total} chunks → {outpath}")
+    print(f"[done] wrote {total} chunks -> {outpath}")
     return 0
 
 if __name__ == "__main__":
