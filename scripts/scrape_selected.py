@@ -65,6 +65,35 @@ def _normalize_cols_for_pipeline(df):
     rename_first(["url", "Url", "URL", "link", "Link"], "URL")
     rename_first(["category", "Category", "cat", "Cat"], "category")
     return df
+
+# normalise/compat for column names and resume-skip support
+def _normalise(df):
+    # lower-case, trim
+    df = df.rename(columns={c: c.strip().lower() for c in df.columns})
+    # coalesce URL column (url/URL/link variations → url)
+    for k in ("url", "link"):
+        if k in df.columns:
+            if k != "url":
+                df = df.rename(columns={k: "url"})
+            break
+    if "url" not in df.columns:
+        raise SystemExit("Selected CSV must contain a 'url' (or URL/link) column.")
+    return df
+
+def _already_done(out_csv_path):
+    # if resuming, return a set of URLs already processed; tolerate missing file/columns
+    done = set()
+    if os.path.isfile(out_csv_path):
+        try:
+            prev = pd.read_csv(out_csv_path)
+            prev = prev.rename(columns={c: c.strip().lower() for c in prev.columns})
+            if "url" in prev.columns:
+                done.update(x for x in prev["url"].astype(str))
+            elif "URL" in prev.columns:  # very old runs
+                done.update(x for x in prev["URL"].astype(str))
+        except Exception:
+            pass
+    return done
 # --- end compat helper ---
 
 UA = os.environ.get("SCRAPER_USER_AGENT", "ctikg-sol-phase1/0.1 (+https://github.com)")
@@ -150,22 +179,23 @@ def pdf_bytes_to_text(b):
         return ""
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--in", dest="in_path", required=True)
-    ap.add_argument("--out", dest="log_csv", default="results/scrape_log.csv")
-    ap.add_argument("--jsonl", dest="jsonl_path", default="results/scraped_corpus.jsonl")
-    ap.add_argument("--artifacts", default="artifacts")
-    ap.add_argument("--max_per_category", type=int, default=120)
-    ap.add_argument("--concurrency", type=int, default=4)  # reserved for future; current is sequential + polite throttle
-    ap.add_argument("--ignore_robots", action="store_true")
-    ap.add_argument("--throttle_sec", type=float, default=0.8)
-    args = ap.parse_args()
+  ap = argparse.ArgumentParser()
+  ap.add_argument("--in",    dest="in_path",   required=True, help="Selected CSV from category_select")
+  ap.add_argument("--out",   dest="out_csv",   required=True, help="Scrape log CSV to write")
+  ap.add_argument("--jsonl", dest="jsonl_path",required=True, help="Output corpus jsonl")
+  ap.add_argument("--artifacts", default="artifacts")
+  ap.add_argument("--max_per_category", type=int, default=999999)
+  ap.add_argument("--concurrency",      type=int, default=4)
+  ap.add_argument("--ignore_robots",    action="store_true")
+  ap.add_argument("--throttle_sec",     type=float, default=0)
+  args = ap.parse_args()
 
     artifacts = mk_dirs(args.artifacts)
     Path("results").mkdir(exist_ok=True)
 
-   df = pd.read_csv(args.in_path)
-df = _normalize_cols_for_pipeline(df)  # <- ensure 'URL' and 'category' exist
+df = pd.read_csv(args.in_path)
+df = _normalise(df)                # <— normalize names, coalesce url column
+df = df.drop_duplicates(subset=["url"], keep="first").reset_index(drop=True)
 assert "URL" in df.columns, "Selected CSV must contain a URL column (URL/url/link)"
     if "Status" in df.columns:
         df = df[df["Status"].astype(str).str.lower() == "selected"]
@@ -205,12 +235,12 @@ assert "URL" in df.columns, "Selected CSV must contain a URL column (URL/url/lin
         pdate = getattr(row, "Publish_Date", "")
 
         if not url:
-            log_w.writerow({"URL": url, "Status":"skip", "Reason":"no_url", "Category": cat, "Source_Domain": src, "Title": ttl, "Publish_Date": pdate})
+            log_w.writerow({"url": url, "Status":"skip", "Reason":"no_url", "Category": cat, "Source_Domain": src, "Title": ttl, "Publish_Date": pdate})
             continue
 
         # robots
         if not args.ignore_robots and not allowed_by_robots(robots_cache, url, UA):
-            log_w.writerow({"URL": url, "Status":"blocked", "Reason":"robots.txt", "Category": cat,
+            log_w.writerow({"url": url, "Status":"blocked", "Reason":"robots.txt", "Category": cat,
                             "Source_Domain": src, "Title": ttl, "Publish_Date": pdate})
             time.sleep(args.throttle_sec)
             continue
@@ -218,7 +248,7 @@ assert "URL" in df.columns, "Selected CSV must contain a URL column (URL/url/lin
         try:
             resp = sess.get(url, timeout=25)
         except Exception as e:
-            log_w.writerow({"URL": url, "Status":"error", "Reason": f"request:{e}", "Category": cat,
+            log_w.writerow({"url": url, "Status":"error", "Reason": f"request:{e}", "Category": cat,
                             "Source_Domain": src, "Title": ttl, "Publish_Date": pdate})
             time.sleep(args.throttle_sec); continue
 
@@ -278,7 +308,7 @@ assert "URL" in df.columns, "Selected CSV must contain a URL column (URL/url/lin
 
             # log csv
             log_w.writerow({
-                "URL": url, "Status": status, "Reason": reason, "Category": cat,
+                "url": url, "Status": status, "Reason": reason, "Category": cat,
                 "Source_Domain": src, "Title": ttl, "Publish_Date": pdate,
                 "html_path": html_path, "pdf_path": pdf_path, "txt_path": txt_path,
                 "sha256": doc_sha, "bytes": len(raw_bytes) if raw_bytes else 0,
@@ -286,7 +316,7 @@ assert "URL" in df.columns, "Selected CSV must contain a URL column (URL/url/lin
             })
 
         except Exception as e:
-            log_w.writerow({"URL": url, "Status":"error", "Reason": f"processing:{e}", "Category": cat,
+            log_w.writerow({"url": url, "Status":"error", "Reason": f"processing:{e}", "Category": cat,
                             "Source_Domain": src, "Title": ttl, "Publish_Date": pdate})
         finally:
             time.sleep(args.throttle_sec)
