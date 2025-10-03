@@ -37,7 +37,9 @@ def main():
     args = ap.parse_args()
 
     os.makedirs(args.outdir, exist_ok=True)
-    outpath = pathlib.Path(args.outdir) / f"{args.category}.jsonl"
+# sanitize filename so slashes/spaces don't create subfolders
+safe = re.sub(r"[^A-Za-z0-9]+", "_", args.category).strip("_")
+outpath = pathlib.Path(args.outdir) / f"{safe}.jsonl"
 
     if not os.path.isdir(args.indir):
         print(f"[info] no indir '{args.indir}' – skipping chunking.")
