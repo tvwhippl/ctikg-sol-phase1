@@ -77,14 +77,18 @@ topic-scrape:
 
 # 5) (Optional) Write plaintext chunks, then export CTI-KG inputs and doc metadata
 topic-chunk:
-	@$(call _cat_eval)
-	@echo "Chunking plaintext (ok if content/text is empty; step is optional)"
-	@$(PY) scripts/chunk_articles.py --category $$CATNAME --indir content/text --outdir chunks || true
-	@$(PY) scripts/export_ctikg_input.py \
-	  --in_jsonl results/scraped_corpus.jsonl \
-	  --out_csv exports/ctikg_input.csv \
-	  --out_docs data/ctikg_docs_meta.json
-	@ls -lh exports/ctikg_input.csv data/ctikg_docs_meta.json
+	@{ \
+		$(call _cat_eval); \
+		echo "Chunking plaintext for $$CATNAME (ok if content/text is empty; step is optional)"; \
+		set +e; $(PY) scripts/chunk_articles.py --category "$$CATNAME" --indir content/text --outdir chunks; status=$$?; set -e; \
+		echo "[info] chunk_articles.py exit=$$status (ignored if nonzero)"; \
+		$(PY) scripts/export_ctikg_input.py \
+			--in_jsonl results/scraped_corpus.jsonl \
+			--out_csv exports/ctikg_input.csv \
+			--out_docs data/ctikg_docs_meta.json; \
+		ls -lh exports/ctikg_input.csv data/ctikg_docs_meta.json; \
+	}
+
 
 # Alias kept for readability
 topic-export: topic-chunk
