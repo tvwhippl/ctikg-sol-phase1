@@ -43,34 +43,11 @@ import pandas as pd
 from urllib import robotparser
 from tqdm import tqdm
 
-# --- begin compat helper (accept 'url'/'URL'/'link' etc.) ---
-def _normalize_cols_for_pipeline(df):
-    """
-    Normalize the Selected CSV so the rest of the code can keep using:
-      - 'URL' (uppercase) for the link column
-      - 'category' (lowercase) for the category column
-    Accepts common variants like: url/URL/Url/link, category/Category/cat.
-    """
-    # case-insensitive lookup: lower-name -> original-name
-    lower2orig = {c.lower(): c for c in df.columns}
-
-    def rename_first(aliases, target):
-        if target in df.columns:
-            return
-        for a in aliases:
-            if a.lower() in lower2orig:
-                df.rename(columns={lower2orig[a.lower()]: target}, inplace=True)
-                break
-
-    rename_first(["url", "Url", "URL", "link", "Link"], "URL")
-    rename_first(["category", "Category", "cat", "Cat"], "category")
-    return df
-
-# normalise/compat for column names and resume-skip support
+# --- helpers: column normalize + resume support ---
 def _normalise(df):
-    # lower-case, trim
+    # lower-case headers and strip whitespace
     df = df.rename(columns={c: c.strip().lower() for c in df.columns})
-    # coalesce URL column (url/URL/link variations → url)
+    # coalesce possible URL column names into 'url'
     for k in ("url", "link"):
         if k in df.columns:
             if k != "url":
@@ -81,16 +58,17 @@ def _normalise(df):
     return df
 
 def _already_done(out_csv_path):
-    # if resuming, return a set of URLs already processed; tolerate missing file/columns
+    """
+    If resuming, return URLs already present in the log CSV (tolerate missing file).
+    """
     done = set()
     if os.path.isfile(out_csv_path):
         try:
             prev = pd.read_csv(out_csv_path)
             prev = prev.rename(columns={c: c.strip().lower() for c in prev.columns})
-            if "url" in prev.columns:
-                done.update(x for x in prev["url"].astype(str))
-            elif "URL" in prev.columns:  # very old runs
-                done.update(x for x in prev["URL"].astype(str))
+            col = "url" if "url" in prev.columns else ("URL" if "URL" in prev.columns else None)
+            if col:
+                done.update(map(str, prev[col].astype(str)))
         except Exception:
             pass
     return done
@@ -179,22 +157,23 @@ def pdf_bytes_to_text(b):
         return ""
 
 def main():
-  ap = argparse.ArgumentParser()
-  ap.add_argument("--in",    dest="in_path",   required=True, help="Selected CSV from category_select")
-  ap.add_argument("--out",   dest="out_csv",   required=True, help="Scrape log CSV to write")
-  ap.add_argument("--jsonl", dest="jsonl_path",required=True, help="Output corpus jsonl")
-  ap.add_argument("--artifacts", default="artifacts")
-  ap.add_argument("--max_per_category", type=int, default=999999)
-  ap.add_argument("--concurrency",      type=int, default=4)
-  ap.add_argument("--ignore_robots",    action="store_true")
-  ap.add_argument("--throttle_sec",     type=float, default=0)
-  args = ap.parse_args()
+ap = argparse.ArgumentParser()
+ap.add_argument("--in",    dest="in_path",    required=True, help="Selected CSV from category_select")
+ap.add_argument("--out",   dest="out_csv",    required=True, help="Scrape log CSV to write")
+ap.add_argument("--jsonl", dest="jsonl_path", required=True, help="Output corpus jsonl")
+ap.add_argument("--artifacts", default="artifacts")
+ap.add_argument("--max_per_category", type=int, default=999999)
+ap.add_argument("--concurrency",      type=int, default=4)
+ap.add_argument("--ignore_robots",    action="store_true")
+ap.add_argument("--throttle_sec",     type=float, default=0)
+args = ap.parse_args()
+
 
     artifacts = mk_dirs(args.artifacts)
     Path("results").mkdir(exist_ok=True)
 
 df = pd.read_csv(args.in_path)
-df = _normalise(df)                # <— normalize names, coalesce url column
+df = _normalise(df)
 df = df.drop_duplicates(subset=["url"], keep="first").reset_index(drop=True)
 assert "URL" in df.columns, "Selected CSV must contain a URL column (URL/url/link)"
     if "Status" in df.columns:
