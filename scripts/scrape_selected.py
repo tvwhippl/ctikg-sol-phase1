@@ -66,7 +66,7 @@ def _already_done(out_csv_path):
         try:
             prev = pd.read_csv(out_csv_path)
             prev = prev.rename(columns={c: c.strip().lower() for c in prev.columns})
-            col = "url" if "url" in prev.columns else ("URL" if "URL" in prev.columns else None)
+            col = "url" if "url" in prev.columns else None
             if col:
                 done.update(map(str, prev[col].astype(str)))
         except Exception:
@@ -156,7 +156,7 @@ def pdf_bytes_to_text(b):
     except Exception:
         return ""
 
-def main():
+    def main():
 ap = argparse.ArgumentParser()
 ap.add_argument("--in",    dest="in_path",    required=True, help="Selected CSV from category_select")
 ap.add_argument("--out",   dest="out_csv",    required=True, help="Scrape log CSV to write")
@@ -175,7 +175,7 @@ args = ap.parse_args()
 df = pd.read_csv(args.in_path)
 df = _normalise(df)
 df = df.drop_duplicates(subset=["url"], keep="first").reset_index(drop=True)
-assert "URL" in df.columns, "Selected CSV must contain a URL column (URL/url/link)"
+assert "url" in df.columns, "Selected CSV must contain a url column (URL/url/link)"
     if "Status" in df.columns:
         df = df[df["Status"].astype(str).str.lower() == "selected"]
     if "Category_Guess" not in df.columns:
