@@ -89,7 +89,6 @@ topic-chunk:
 		ls -lh exports/ctikg_input.csv data/ctikg_docs_meta.json; \
 	}
 
-
 # Alias kept for readability
 topic-export: topic-chunk
 
