@@ -190,28 +190,34 @@ assert "URL" in df.columns, "Selected CSV must contain a URL column (URL/url/lin
         if "Score" in grp.columns:
             grp = grp.sort_values("Score", ascending=False)
         keep.append(grp.head(args.max_per_category))
-    df = pd.concat(keep, ignore_index=True).drop_duplicates(subset=["URL"])
+    df = pd.concat(keep, ignore_index=True).drop_duplicates(subset=["url"])
 
     sess = build_session(cache=True)
     robots_cache = {}
 
-    # prepare outputs
-    log_f = open(args.log_csv, "w", newline="", encoding="utf-8")
-    log_w = csv.DictWriter(log_f, fieldnames=[
-        "URL","Status","Reason","Category","Source_Domain","Title","Publish_Date",
-        "html_path","pdf_path","txt_path","sha256","bytes","fetched_at"
-    ])
-    log_w.writeheader()
+# prepare outputs
+  log_f = open(args.out_csv, "w", newline="", encoding="utf-8")
+  log_w = csv.DictWriter(log_f, fieldnames=[
+    "url", "status", "reason", "category", "source_domain",
+    "title", "publish_date",
+    "txt_path", "html_path", "pdf_path",
+    "sha256", "bytes", "fetched_at"
+  ])
+  log_w.writeheader()
 
-    jsonl_f = open(args.jsonl_path, "a", encoding="utf-8")
+  jsonl_f = open(args.jsonl_path, "a", encoding="utf-8")
 
     pbar = tqdm(df.itertuples(index=False), total=len(df), desc="Scraping")
     for row in pbar:
-        url = getattr(row, "URL", "")
-        cat = getattr(row, "Category_Guess", "")
-        src = getattr(row, "Source_Domain", "")
-        ttl = getattr(row, "Title", "")
-        pdate = getattr(row, "Publish_Date", "")
+      url   = getattr(row, "url", "")
+      cat   = getattr(row, "Category_Guess", "")
+      src   = getattr(row, "Source_Domain", "")
+      ttl   = getattr(row, "Title", "")
+      pdate = getattr(row, "Publish_Date", "")
+
+html_path = None
+pdf_path  = None
+txt_path  = None
 
         if not url:
             log_w.writerow({"url": url, "Status":"skip", "Reason":"no_url", "Category": cat, "Source_Domain": src, "Title": ttl, "Publish_Date": pdate})
@@ -274,10 +280,10 @@ assert "URL" in df.columns, "Selected CSV must contain a URL column (URL/url/lin
                 "source_domain": src,
                 "category": cat,
                 "fetched_at": datetime.utcnow().isoformat() + "Z",
-                "html_path": html_path or None,
-                "pdf_path": pdf_path or None,
-                "txt_path": txt_path or None,
-                "sha256": doc_sha,
+                "html_path": str(html_path) if html_path else None,
+                "pdf_path": str(pdf_path) if pdf_path else None,
+                "txt_path": str(txt_path) if txt_path else None,
+                "sha256": doc_sha if raw_bytes else None,
                 "bytes": len(raw_bytes) if raw_bytes else None,
                 "status": status,
                 "reason": reason or None,
@@ -285,14 +291,17 @@ assert "URL" in df.columns, "Selected CSV must contain a URL column (URL/url/lin
             jsonl_f.write(json.dumps(rec, ensure_ascii=False) + "\n")
             jsonl_f.flush()
 
-            # log csv
+            # write scrape log CSV row
             log_w.writerow({
-                "url": url, "Status": status, "Reason": reason, "Category": cat,
-                "Source_Domain": src, "Title": ttl, "Publish_Date": pdate,
-                "html_path": html_path, "pdf_path": pdf_path, "txt_path": txt_path,
+                "url": url, "status": status, "reason": reason, "category": cat,
+                "source_domain": src, "title": ttl, "publish_date": pdate,
+                "txt_path": str(txt_path) if txt_path else None,
+                "html_path": str(html_path) if html_path else None,
+                "pdf_path": str(pdf_path) if pdf_path else None,
                 "sha256": doc_sha, "bytes": len(raw_bytes) if raw_bytes else 0,
-                "fetched_at": rec["fetched_at"]
+                "fetched_at": rec["fetched_at"],
             })
+
 
         except Exception as e:
             log_w.writerow({"url": url, "Status":"error", "Reason": f"processing:{e}", "Category": cat,
@@ -301,7 +310,7 @@ assert "URL" in df.columns, "Selected CSV must contain a URL column (URL/url/lin
             time.sleep(args.throttle_sec)
 
     log_f.close(); jsonl_f.close()
-    print(f"[DONE] Log: {args.log_csv}")
+    print(f"[DONE] Log: {args.out_csv}")
     print(f"[DONE] JSONL corpus: {args.jsonl_path}")
     print(f"[DONE] Artifacts in: {artifacts}")
 
