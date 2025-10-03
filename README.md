@@ -6,24 +6,15 @@ Reproducible pipeline to collect, pre-rank, and select cybersecurity articles fo
 3) NFS / File-Share Exposure  
 4) JupyterHub / Open OnDemand
 
-## Quick start
-
+### Open-topic Phase-1 (local)
 ```bash
-python3 -m pip install -r requirements.txt
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
 
-python3 scripts/pre_rank_links_v3.py \
-  --sources configs/Sources_Config_Expanded_v2.json \
-  --categories configs/Category_Keywords_Expanded.json \
-  --out batch_extra.csv \
-  --limit_per_feed 500 \
-  --half_life_days 9999 \
-  --verbose
-
-python3 scripts/merge_dedupe.py data/Links_Queue_master.csv data/Links_Queue.csv batch_extra.csv
-mv data/Links_Queue_master.csv data/Links_Queue.csv
-
-python3 scripts/make_helper_flags.py data/Links_Queue_sorted.csv
-
-python3 scripts/select_winners.py \
-  --in data/Links_Queue_sorted_flags.csv \
-  --out data/Links_Queue_with_selected.csv
+make topic-setup
+make topic-gen TOPIC="CI/CD pipeline attacks: runner poisoning, OIDC, artifact/cache poisoning"
+make topic-pull SOURCES=configs/sources/common.json
+make topic-select
+make topic-scrape WINNERS=25 CONCURRENCY=2 THROTTLE_SEC=1 IGNORE_ROBOTS=1
+make topic-chunk
+make topic-verify
