@@ -20,6 +20,18 @@ LLM_MODEL    ?= llama3.1
 
 .PHONY: topic-setup topic-gen topic-pull topic-select topic-scrape topic-chunk topic-export topic-all
 
+.PHONY: topic-verify
+topic-verify:
+	@python3 - <<'PY'
+import os, pandas as pd
+assert os.path.isfile("results/scraped_corpus.jsonl"), "missing scraped_corpus.jsonl"
+assert os.path.isfile("exports/ctikg_input.csv"), "missing exports/ctikg_input.csv"
+df = pd.read_csv("exports/ctikg_input.csv")
+assert "sentence" in df.columns, "missing `sentence` column"
+assert (df["sentence"].astype(str).str.strip()!="").all(), "empty sentences exist"
+print("OK: verification passed. rows:", len(df))
+PY
+
 # Create run dirs & .gitkeep placeholders
 topic-setup:
 	@mkdir -p results artifacts exports configs/categories/_generated content/text chunks data
