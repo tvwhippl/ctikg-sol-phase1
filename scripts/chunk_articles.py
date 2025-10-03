@@ -9,4 +9,3 @@ if not os.path.isdir(args.indir) or not any(True for _ in os.scandir(args.indir)
     sys.stderr.write("[chunk_articles.py] WARN: no input texts found in '%s'. Continuing anyway.\n" % args.indir)
 print("OK")
 PY
-chmod +x scripts/chunk_articles.py
