@@ -95,15 +95,16 @@ topic-export: topic-chunk
 # Convenience: full run (requires TOPIC=...)
 topic-all: topic-setup topic-gen topic-pull topic-select topic-scrape topic-chunk
 
-.PHONY: topic-verify
+.PHONY: topic-verify topic-export-only
+
 topic-verify:
-	@$(PY) -c "import os, pandas as pd; \
-assert os.path.isfile('results/scraped_corpus.jsonl'), 'missing scraped_corpus.jsonl'; \
-assert os.path.isfile('exports/ctikg_input.csv'), 'missing exports/ctikg_input.csv'; \
-df=pd.read_csv('exports/ctikg_input.csv'); \
-assert 'sentence' in df.columns, 'missing `sentence` column'; \
-assert (df['sentence'].astype(str).str.strip()!='').all(), 'empty sentences exist'; \
-print('OK: verification passed. rows:', len(df))"
+	@$(PY) scripts/verify_export.py
+
+topic-export-only:
+	@$(PY) scripts/export_ctikg_input.py \
+		--in_jsonl results/scraped_corpus.jsonl \
+		--out_csv exports/ctikg_input.csv \
+		--out_docs data/ctikg_docs_meta.json
 
 
 
