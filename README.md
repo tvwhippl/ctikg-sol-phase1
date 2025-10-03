@@ -6,7 +6,8 @@ Reproducible pipeline to collect, pre-rank, and select cybersecurity articles fo
 3) NFS / File-Share Exposure  
 4) JupyterHub / Open OnDemand
 
-### Open-topic Phase-1 (local)
+## Open-Topic Phase-1 (local dev)
+
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
@@ -18,3 +19,4 @@ make topic-select
 make topic-scrape WINNERS=25 CONCURRENCY=2 THROTTLE_SEC=1 IGNORE_ROBOTS=1
 make topic-chunk
 make topic-verify
+
