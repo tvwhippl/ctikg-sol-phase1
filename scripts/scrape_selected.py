@@ -156,22 +156,22 @@ def pdf_bytes_to_text(b):
     except Exception:
         return ""
 
-def main():
-        ap = argparse.ArgumentParser()
-        ap.add_argument("--in",    dest="in_path",    required=True, help="Selected CSV from category_select")
-        ap.add_argument("--out",   dest="out_csv",    required=True, help="Scrape log CSV to write")
-        ap.add_argument("--jsonl", dest="jsonl_path", required=True, help="Output corpus jsonl")
-        ap.add_argument("--artifacts", default="artifacts")
-        ap.add_argument("--max_per_category", type=int, default=999999)
-        ap.add_argument("--concurrency",      type=int, default=4)
-        ap.add_argument("--ignore_robots",    action="store_true")
-        ap.add_argument("--throttle_sec",     type=float, default=0)
-        args = ap.parse_args()
+  def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--in",     dest="in_path",     required=True, help="Selected CSV from category_select")
+    ap.add_argument("--out",    dest="out_csv",     required=True, help="Scrape log CSV to write")
+    ap.add_argument("--jsonl",  dest="jsonl_path",  required=True, help="Output corpus jsonl")
+    ap.add_argument("--artifacts", default="artifacts")
+    ap.add_argument("--max_per_category", type=int, default=999999)
+    ap.add_argument("--concurrency",      type=int, default=4)
+    ap.add_argument("--ignore_robots",    action="store_true")
+    ap.add_argument("--throttle_sec",     type=float, default=0)
+    args = ap.parse_args()
 
+    artifacts = mk_dirs(args.artifacts)
+    Path("results").mkdir(exist_ok=True)
 
-        artifacts = mk_dirs(args.artifacts)
-        Path("results").mkdir(exist_ok=True)
-
+    # --- load + normalize + filter ---
     df = pd.read_csv(args.in_path)
     df = _normalise(df)
     df = df.drop_duplicates(subset=["url"], keep="first").reset_index(drop=True)
@@ -183,29 +183,34 @@ def main():
     if "Publish_Date" not in df.columns:
         df["Publish_Date"] = ""
 
-        # cap per category
-        keep = []
-        for cat, grp in df.groupby("Category_Guess"):
+    # --- cap per category ---
+    keep = []
+    for cat, grp in df.groupby("Category_Guess"):
         grp = grp.copy()
         if "Score" in grp.columns:
-        grp = grp.sort_values("Score", ascending=False)
+            grp = grp.sort_values("Score", ascending=False)
         keep.append(grp.head(args.max_per_category))
-        df = pd.concat(keep, ignore_index=True).drop_duplicates(subset=["url"])
+    df = pd.concat(keep, ignore_index=True).drop_duplicates(subset=["url"])
 
-        sess = build_session(cache=True)
-        robots_cache = {}
+    # --- session + robots cache ---
+    sess = build_session(cache=True)
+    robots_cache = {}
 
-        # prepare outputs
-        log_f = open(args.out_csv, "w", newline="", encoding="utf-8")
-        log_w = csv.DictWriter(log_f, fieldnames=["url","status","reason","category","source_domain","title","publish_date",
-        "txt_path","html_path","pdf_path","sha256","bytes","fetched_at"]
-        )
-        log_w.writeheader()
+    # --- outputs ---
+    log_f = open(args.out_csv, "w", newline="", encoding="utf-8")
+    log_w = csv.DictWriter(
+        log_f,
+        fieldnames=[
+            "url","status","reason","category","source_domain","title","publish_date",
+            "txt_path","html_path","pdf_path","sha256","bytes","fetched_at"
+        ],
+    )
+    log_w.writeheader()
+    jsonl_f = open(args.jsonl_path, "a", encoding="utf-8")
 
-        jsonl_f = open(args.jsonl_path, "a", encoding="utf-8")
-
-        pbar = tqdm(df.itertuples(index=False), total=len(df), desc="Scraping")
-        for row in pbar:
+    # --- scrape loop ---
+    pbar = tqdm(df.itertuples(index=False), total=len(df), desc="Scraping")
+    for row in pbar:
         url   = getattr(row, "url", "")
         cat   = getattr(row, "Category_Guess", "")
         src   = getattr(row, "Source_Domain", "")
@@ -215,101 +220,90 @@ def main():
         html_path = None
         pdf_path  = None
         txt_path  = None
+        raw_bytes = b""
+        text_out  = ""
+        status, reason = "ok", ""
 
         if not url:
-        log_w.writerow({"url": url, "Status":"skip", "Reason":"no_url", "Category": cat, "Source_Domain": src, "Title": ttl, "Publish_Date": pdate})
-        continue
+            log_w.writerow({"url": url, "status": "skip", "reason": "no_url",
+                            "category": cat, "source_domain": src,
+                            "title": ttl, "publish_date": pdate})
+            continue
 
-        # robots
         if not args.ignore_robots and not allowed_by_robots(robots_cache, url, UA):
-        log_w.writerow({"url": url, "Status":"blocked", "Reason":"robots.txt", "Category": cat,
-        "Source_Domain": src, "Title": ttl, "Publish_Date": pdate})
-        time.sleep(args.throttle_sec)
-        continue
+            log_w.writerow({"url": url, "status": "blocked", "reason": "robots.txt",
+                            "category": cat, "source_domain": src,
+                            "title": ttl, "publish_date": pdate})
+            time.sleep(args.throttle_sec);  continue
 
         try:
-        resp = sess.get(url, timeout=25)
+            resp = sess.get(url, timeout=25)
         except Exception as e:
-        log_w.writerow({"url": url, "Status":"error", "Reason": f"request:{e}", "Category": cat,
-        "Source_Domain": src, "Title": ttl, "Publish_Date": pdate})
-        time.sleep(args.throttle_sec); continue
+            log_w.writerow({"url": url, "status": "error", "reason": f"request:{e}",
+                            "category": cat, "source_domain": src,
+                            "title": ttl, "publish_date": pdate})
+            time.sleep(args.throttle_sec);  continue
 
-        html_path = pdf_path = txt_path = ""
-        text_out = ""
-        raw_bytes = b""
-        status = "ok"; reason = ""
-        try:
         if is_pdf_response(resp, url):
-        raw_bytes = resp.content or b""
-        if not raw_bytes:
-        status, reason = "error", "empty_pdf"
+            raw_bytes = resp.content or b""
+            if not raw_bytes:
+                status, reason = "error", "empty_pdf"
+            else:
+                fid = sha256_bytes(raw_bytes)[:16]
+                pdf_path = str(artifacts / "pdf" / f"{fid}.pdf")
+                with open(pdf_path, "wb") as f:
+                    f.write(raw_bytes)
+                text_out = pdf_bytes_to_text(raw_bytes)
         else:
-        fid = sha256_bytes(raw_bytes)[:16]
-        pdf_path = str(artifacts / "pdf" / f"{fid}.pdf")
-        with open(pdf_path, "wb") as f: f.write(raw_bytes)
-        text_out = pdf_bytes_to_text(raw_bytes)
-        else:
-        # HTML
-        html = resp.text or ""
-        if not html.strip():
-        status, reason = "error", "empty_html"
-        else:
-        fid = sha256_text(url)[:16]
-        html_path = str(artifacts / "html" / f"{fid}.html")
-        with open(html_path, "w", encoding="utf-8") as f: f.write(html)
-        text_out = clean_html_to_text(html, base_url=url)
+            html = resp.text or ""
+            if not html.strip():
+                status, reason = "error", "empty_html"
+            else:
+                fid = sha256_text(url)[:16]
+                html_path = str(artifacts / "html" / f"{fid}.html")
+                with open(html_path, "w", encoding="utf-8") as f:
+                    f.write(html)
+                text_out = clean_html_to_text(html, base_url=url)
 
-        if text_out:
-        fid_txt = sha256_text(text_out)[:16]
-        txt_path = str(artifacts / "txt" / f"{fid_txt}.txt")
-        with open(txt_path, "w", encoding="utf-8") as f: f.write(text_out)
-        doc_sha = sha256_text(text_out)
-        else:
         doc_sha = ""
-        if status == "ok":  # no earlier error set
-        status, reason = "warn", "no_text_extracted"
+        if text_out:
+            fid_txt  = sha256_text(text_out)[:16]
+            txt_path = str(artifacts / "txt" / f"{fid_txt}.txt")
+            with open(txt_path, "w", encoding="utf-8") as f:
+                f.write(text_out)
+            doc_sha = sha256_text(text_out)
+        elif status == "ok":  # nothing extracted
+            status, reason = "warn", "no_text_extracted"
 
-        # write JSONL record
+        fetched_at = datetime.utcnow().isoformat() + "Z"
+
         rec = {
-        "url": url,
-        "title": ttl,
-        "publish_date": pdate,
-        "source_domain": src,
-        "category": cat,
-        "fetched_at": datetime.utcnow().isoformat() + "Z",
-        "html_path": str(html_path) if html_path else None,
-        "pdf_path": str(pdf_path) if pdf_path else None,
-        "txt_path": str(txt_path) if txt_path else None,
-        "sha256": doc_sha if raw_bytes else None,
-        "bytes": len(raw_bytes) if raw_bytes else None,
-        "status": status,
-        "reason": reason or None,
+            "url": url, "title": ttl, "publish_date": pdate, "source_domain": src,
+            "category": cat, "fetched_at": fetched_at,
+            "html_path": str(html_path) if html_path else None,
+            "pdf_path":  str(pdf_path)  if pdf_path  else None,
+            "txt_path":  str(txt_path)  if txt_path  else None,
+            "sha256":    doc_sha if raw_bytes else None,
+            "bytes":     len(raw_bytes) if raw_bytes else None,
+            "status": status, "reason": (reason or None),
         }
         jsonl_f.write(json.dumps(rec, ensure_ascii=False) + "\n")
         jsonl_f.flush()
 
-        # write scrape log CSV row
         log_w.writerow({
-        "url": url, "status": status, "reason": reason, "category": cat,
-        "source_domain": src, "title": ttl, "publish_date": pdate,
-        "txt_path": str(txt_path) if txt_path else None,
-        "html_path": str(html_path) if html_path else None,
-        "pdf_path": str(pdf_path) if pdf_path else None,
-        "sha256": doc_sha, "bytes": len(raw_bytes) if raw_bytes else 0,
-        "fetched_at": rec["fetched_at"],
+            "url": url, "status": status, "reason": reason, "category": cat,
+            "source_domain": src, "title": ttl, "publish_date": pdate,
+            "txt_path": str(txt_path) if txt_path else None,
+            "html_path": str(html_path) if html_path else None,
+            "pdf_path":  str(pdf_path)  if pdf_path  else None,
+            "sha256": doc_sha, "bytes": len(raw_bytes) if raw_bytes else 0,
+            "fetched_at": fetched_at,
         })
-
-
-        except Exception as e:
-        log_w.writerow({"url": url, "Status":"error", "Reason": f"processing:{e}", "Category": cat,
-        "Source_Domain": src, "Title": ttl, "Publish_Date": pdate})
-        finally:
         time.sleep(args.throttle_sec)
 
-        log_f.close(); jsonl_f.close()
-        print(f"[DONE] Log: {args.out_csv}")
-        print(f"[DONE] JSONL corpus: {args.jsonl_path}")
-        print(f"[DONE] Artifacts in: {artifacts}")
+    log_f.close()
+    jsonl_f.close()
+
 
 if __name__ == "__main__":
     main()
