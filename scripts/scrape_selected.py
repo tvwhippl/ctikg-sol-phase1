@@ -172,15 +172,15 @@ def main():
         artifacts = mk_dirs(args.artifacts)
         Path("results").mkdir(exist_ok=True)
 
-        df = pd.read_csv(args.in_path)
-        df = _normalise(df)
-        df = df.drop_duplicates(subset=["url"], keep="first").reset_index(drop=True)
-        assert "url" in df.columns, "Selected CSV must contain a url column (URL/url/link)"
-        if "Status" in df.columns:
+    df = pd.read_csv(args.in_path)
+    df = _normalise(df)
+    df = df.drop_duplicates(subset=["url"], keep="first").reset_index(drop=True)
+    assert "url" in df.columns, "Selected CSV must contain a url column (URL/url/link)"
+    if "Status" in df.columns:
         df = df[df["Status"].astype(str).str.lower() == "selected"]
-        if "Category_Guess" not in df.columns:
+    if "Category_Guess" not in df.columns:
         df["Category_Guess"] = ""
-        if "Publish_Date" not in df.columns:
+    if "Publish_Date" not in df.columns:
         df["Publish_Date"] = ""
 
         # cap per category
