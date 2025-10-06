@@ -156,7 +156,7 @@ def pdf_bytes_to_text(b):
     except Exception:
         return ""
 
-  def main():
+def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--in",     dest="in_path",     required=True, help="Selected CSV from category_select")
     ap.add_argument("--out",    dest="out_csv",     required=True, help="Scrape log CSV to write")
@@ -171,7 +171,7 @@ def pdf_bytes_to_text(b):
     artifacts = mk_dirs(args.artifacts)
     Path("results").mkdir(exist_ok=True)
 
-    # --- load + normalize + filter ---
+    # load + normalize + filter
     df = pd.read_csv(args.in_path)
     df = _normalise(df)
     df = df.drop_duplicates(subset=["url"], keep="first").reset_index(drop=True)
@@ -183,7 +183,7 @@ def pdf_bytes_to_text(b):
     if "Publish_Date" not in df.columns:
         df["Publish_Date"] = ""
 
-    # --- cap per category ---
+    # cap per category
     keep = []
     for cat, grp in df.groupby("Category_Guess"):
         grp = grp.copy()
@@ -192,11 +192,11 @@ def pdf_bytes_to_text(b):
         keep.append(grp.head(args.max_per_category))
     df = pd.concat(keep, ignore_index=True).drop_duplicates(subset=["url"])
 
-    # --- session + robots cache ---
+    # session + robots
     sess = build_session(cache=True)
     robots_cache = {}
 
-    # --- outputs ---
+    # outputs
     log_f = open(args.out_csv, "w", newline="", encoding="utf-8")
     log_w = csv.DictWriter(
         log_f,
@@ -208,7 +208,7 @@ def pdf_bytes_to_text(b):
     log_w.writeheader()
     jsonl_f = open(args.jsonl_path, "a", encoding="utf-8")
 
-    # --- scrape loop ---
+    # scrape loop
     pbar = tqdm(df.itertuples(index=False), total=len(df), desc="Scraping")
     for row in pbar:
         url   = getattr(row, "url", "")
@@ -272,7 +272,7 @@ def pdf_bytes_to_text(b):
             with open(txt_path, "w", encoding="utf-8") as f:
                 f.write(text_out)
             doc_sha = sha256_text(text_out)
-        elif status == "ok":  # nothing extracted
+        elif status == "ok":
             status, reason = "warn", "no_text_extracted"
 
         fetched_at = datetime.utcnow().isoformat() + "Z"
