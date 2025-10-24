@@ -1,309 +1,185 @@
+
 #!/usr/bin/env python3
-"""
-Scrape winners (Status=Selected) from the queue and produce:
-- artifacts/html/<id>.html   (raw HTML when applicable)
-- artifacts/pdf/<id>.pdf     (raw PDF when applicable)
-- artifacts/txt/<id>.txt     (cleaned text)
-- results/scraped_corpus.jsonl  (one JSON record per doc)
-- results/scrape_log.csv        (status/reason per URL)
-
-Usage:
-  python3 scripts/scrape_selected.py \
-    --in data/Links_Queue_with_selected.csv \
-    --out results/scrape_log.csv \
-    --jsonl results/scraped_corpus.jsonl \
-    --artifacts artifacts \
-    --max_per_category 120 \
-    --concurrency 4
-"""
-
-import argparse, csv, hashlib, io, json, os, re, time, urllib.parse, warnings
-from datetime import datetime
+import argparse, csv, json, os, sys, time, re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from urllib.parse import urlparse
+import requests, trafilatura, chardet
+from io import BytesIO
+from pdfminer.high_level import extract_text as pdf_extract
+import justext
 
-import requests
-from requests.adapters import HTTPAdapter, Retry
-try:
-    import requests_cache
-except Exception:
-    requests_cache = None
+UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36"
 
-from bs4 import BeautifulSoup
-try:
-    import trafilatura
-except Exception:
-    trafilatura = None
+def normkey(k): 
+    return (k or "").strip().lower().replace(" ", "_")
 
-try:
-    from pdfminer.high_level import extract_text as pdf_extract_text
-except Exception:
-    pdf_extract_text = None
+def find_url_field(fieldnames):
+    # prioritize common names, but allow any col that *looks* like a URL
+    priority = ["url","link","article_url","page","href"]
+    keys = [normkey(k) for k in fieldnames]
+    for p in priority:
+        if p in keys: 
+            return keys.index(p)
+    # fallback: first column whose sample value looks like http(s)
+    return None
 
-import pandas as pd
-from urllib import robotparser
-from tqdm import tqdm
+def load_rows(csv_path):
+    rows = []
+    with open(csv_path, newline="", encoding="utf-8") as f:
+        reader = csv.reader(f)
+        header = next(reader)
+        idx = find_url_field(header)
+        # If we couldn't find a clear URL field, scan row values
+        if idx is None:
+            header = [h if h else f"col{i}" for i,h in enumerate(header)]
+            for r in [row for row in reader if any(row)]:
+                url_idx = next((i for i,v in enumerate(r) if isinstance(v,str) and v.startswith("http")), None)
+                if url_idx is None: 
+                    continue
+                d = dict(zip([normkey(x) for x in header], r))
+                url = r[url_idx].strip()
+                category = d.get("category") or d.get("topic") or "unspecified"
+                title = d.get("title") or d.get("headline") or ""
+                sd = d.get("source_domain") or urlparse(url).netloc
+                rows.append({"url": url, "category": category, "title": title, "source_domain": sd})
+            return rows
+        # normal path (we know the URL column)
+        header_norm = [normkey(h) for h in header]
+        for r in reader:
+            if not r or len(r) != len(header):
+                continue
+            d = dict(zip(header_norm, r))
+            url = r[idx].strip()
+            if not (isinstance(url,str) and url.startswith("http")):
+                continue
+            category = d.get("category") or d.get("topic") or "unspecified"
+            title = d.get("title") or d.get("headline") or ""
+            sd = d.get("source_domain") or urlparse(url).netloc
+            rows.append({"url": url, "category": category, "title": title, "source_domain": sd})
+    return rows
 
-# --- helpers: column normalize + resume support ---
-def _normalise(df):
-    # lower-case headers and strip whitespace
-    df = df.rename(columns={c: c.strip().lower() for c in df.columns})
-    # coalesce possible URL column names into 'url'
-    for k in ("url", "link"):
-        if k in df.columns:
-            if k != "url":
-                df = df.rename(columns={k: "url"})
-            break
-    if "url" not in df.columns:
-        raise SystemExit("Selected CSV must contain a 'url' (or URL/link) column.")
-    return df
+def sanitize_filename(s):
+    return "".join(c if c.isalnum() or c in "-._" else "_" for c in s)[:180]
 
-def _already_done(out_csv_path):
-    """
-    If resuming, return URLs already present in the log CSV (tolerate missing file).
-    """
-    done = set()
-    if os.path.isfile(out_csv_path):
-        try:
-            prev = pd.read_csv(out_csv_path)
-            prev = prev.rename(columns={c: c.strip().lower() for c in prev.columns})
-            col = "url" if "url" in prev.columns else None
-            if col:
-                done.update(map(str, prev[col].astype(str)))
-        except Exception:
-            pass
-    return done
-# --- end compat helper ---
-
-UA = os.environ.get("SCRAPER_USER_AGENT", "ctikg-sol-phase1/0.1 (+https://github.com)")
-
-def mk_dirs(base):
-    base = Path(base)
-    (base / "html").mkdir(parents=True, exist_ok=True)
-    (base / "pdf").mkdir(parents=True, exist_ok=True)
-    (base / "txt").mkdir(parents=True, exist_ok=True)
-    return base
-
-def normalized_domain(url):
+def fetch_raw(url, timeout=25):
     try:
-        return urllib.parse.urlparse(url).netloc.lower()
+        r = requests.get(url, headers={"User-Agent": UA, "Accept":"text/html,application/pdf;q=0.9,*/*;q=0.8"}, timeout=timeout)
+        ct = r.headers.get("Content-Type","").lower()
+        return r.status_code, ct, r.content
+    except Exception as e:
+        return 0, "", None
+
+def html_to_text(html_bytes):
+    # try charset detection
+    enc = chardet.detect(html_bytes).get("encoding") or "utf-8"
+    html = html_bytes.decode(enc, errors="ignore")
+    # 1) Trafilatura (high recall)
+    text = trafilatura.extract(html, favor_recall=True, include_comments=False, include_tables=False)
+    if text and text.strip():
+        return text
+    # 2) jusText fallback
+    try:
+        paras = justext.justext(html, justext.get_stoplist("English"))
+        good = [p.text for p in paras if not p.is_boilerplate]
+        return "\n".join(good).strip()
     except Exception:
         return ""
 
-def sha256_bytes(b: bytes) -> str:
-    h = hashlib.sha256(); h.update(b); return h.hexdigest()
-
-def sha256_text(s: str) -> str:
-    return hashlib.sha256(s.encode("utf-8", errors="ignore")).hexdigest()
-
-def allowed_by_robots(rob_cache, url, ua) -> bool:
-    dom = normalized_domain(url)
-    if dom not in rob_cache:
-        rp = robotparser.RobotFileParser()
-        scheme = urllib.parse.urlparse(url).scheme or "https"
-        robots_url = f"{scheme}://{dom}/robots.txt"
-        try:
-            rp.set_url(robots_url); rp.read()
-        except Exception:
-            # assume allowed if robots not reachable
-            rob_cache[dom] = None
-            return True
-        rob_cache[dom] = rp
-    rp = rob_cache[dom]
-    return True if rp is None else rp.can_fetch(ua, url)
-
-def build_session(cache=True):
-    if cache and requests_cache is not None:
-        requests_cache.install_cache("scraper_cache", expire_after=60*60*24*7)
-    s = requests.Session()
-    retries = Retry(total=3, backoff_factor=0.7, status_forcelist=[429, 500, 502, 503, 504])
-    s.mount("http://", HTTPAdapter(max_retries=retries))
-    s.mount("https://", HTTPAdapter(max_retries=retries))
-    s.headers.update({"User-Agent": UA, "Accept": "*/*"})
-    return s
-
-def is_pdf_response(resp, url):
-    ctype = resp.headers.get("Content-Type","").lower()
-    if "application/pdf" in ctype: return True
-    if re.search(r"\.pdf($|\?)", url.lower()): return True
-    return False
-
-def clean_html_to_text(html, base_url=None):
-    txt = ""
-    if trafilatura is not None:
-        try:
-            txt = trafilatura.extract(html, include_comments=False, include_tables=False, url=base_url) or ""
-        except Exception:
-            txt = ""
-    if not txt:
-        try:
-            soup = BeautifulSoup(html, "lxml")
-            for s in soup(["script","style","noscript"]): s.extract()
-            txt = soup.get_text(separator="\n")
-            # lightweight de-dup of empty lines
-            lines = [ln.strip() for ln in txt.splitlines()]
-            txt = "\n".join([ln for ln in lines if ln])
-        except Exception:
-            txt = ""
-    return txt
-
-def pdf_bytes_to_text(b):
-    if pdf_extract_text is None:
-        return ""
+def scrape_one(row, artifacts_dir, timeout=25):
+    url = row["url"]
+    domain = row["source_domain"]
+    status, ctype, body = fetch_raw(url, timeout=timeout)
+    if status != 200 or body is None:
+        return {"url": url, "status": "fetch_fail", "reason": f"http_{status}", **row}
+    # artifact path
+    ext = ".pdf" if ("pdf" in ctype or url.lower().endswith(".pdf") or body[:4] == b"%PDF") else ".html"
+    art = Path(artifacts_dir) / f"{sanitize_filename(domain)}__{sanitize_filename(urlparse(url).path or 'index')}{ext}"
     try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            return pdf_extract_text(io.BytesIO(b)) or ""
+        art.write_bytes(body)
     except Exception:
-        return ""
+        pass
+    # convert to text
+    try:
+        if ext == ".pdf":
+            text = pdf_extract(BytesIO(body)) or ""
+        else:
+            text = html_to_text(body)
+    except Exception as e:
+        return {"url": url, "status": "error", "reason": f"extract_exc:{e.__class__.__name__}", "artifact": str(art), **row}
+    if not text.strip():
+        return {"url": url, "status": "extract_fail", "reason": "empty_text", "artifact": str(art), **row}
+    return {"url": url, "status": "ok", "reason": "", "text": text, "artifact": str(art), **row}
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--in",     dest="in_path",     required=True, help="Selected CSV from category_select")
-    ap.add_argument("--out",    dest="out_csv",     required=True, help="Scrape log CSV to write")
-    ap.add_argument("--jsonl",  dest="jsonl_path",  required=True, help="Output corpus jsonl")
-    ap.add_argument("--artifacts", default="artifacts")
-    ap.add_argument("--max_per_category", type=int, default=999999)
-    ap.add_argument("--concurrency",      type=int, default=4)
-    ap.add_argument("--ignore_robots",    action="store_true")
-    ap.add_argument("--throttle_sec",     type=float, default=0)
+    ap.add_argument("--in", dest="inp", required=True)
+    ap.add_argument("--out", dest="out_csv", required=True)  # scrape log
+    ap.add_argument("--jsonl", dest="out_jsonl", required=True)
+    ap.add_argument("--artifacts", dest="artifacts", required=True)
+    ap.add_argument("--max_per_category", type=int, default=25)
+    ap.add_argument("--concurrency", type=int, default=4)
+    ap.add_argument("--ignore_robots", action="store_true",
+                help="compat flag for Makefile; scraper does direct HTTP and does not consult robots.txt")
+    ap.add_argument("--throttle_sec", type=float, default=0.0,
+                help="sleep this many seconds between completed fetches (politeness throttle)")
     args = ap.parse_args()
 
-    artifacts = mk_dirs(args.artifacts)
-    Path("results").mkdir(exist_ok=True)
+    throttle = max(0.0, float(getattr(args, "throttle_sec", 0.0)))
 
-    # load + normalize + filter
-    df = pd.read_csv(args.in_path)
-    df = _normalise(df)
-    df = df.drop_duplicates(subset=["url"], keep="first").reset_index(drop=True)
-    assert "url" in df.columns, "Selected CSV must contain a url column (URL/url/link)"
-    if "Status" in df.columns:
-        df = df[df["Status"].astype(str).str.lower() == "selected"]
-    if "Category_Guess" not in df.columns:
-        df["Category_Guess"] = ""
-    if "Publish_Date" not in df.columns:
-        df["Publish_Date"] = ""
+    Path(args.artifacts).mkdir(parents=True, exist_ok=True)
+    Path(os.path.dirname(args.out_csv) or ".").mkdir(parents=True, exist_ok=True)
+    Path(os.path.dirname(args.out_jsonl) or ".").mkdir(parents=True, exist_ok=True)
+
+    rows = load_rows(args.inp)
+    if not rows:
+        print(f"[WARN] No rows found in {args.inp}", file=sys.stderr)
+        open(args.out_csv, "w").write("")
+        open(args.out_jsonl, "w").write("")
+        sys.exit(0)
 
     # cap per category
-    keep = []
-    for cat, grp in df.groupby("Category_Guess"):
-        grp = grp.copy()
-        if "Score" in grp.columns:
-            grp = grp.sort_values("Score", ascending=False)
-        keep.append(grp.head(args.max_per_category))
-    df = pd.concat(keep, ignore_index=True).drop_duplicates(subset=["url"])
+    per_cat, selected = {}, []
+    for r in rows:
+        c = r["category"]
+        n = per_cat.get(c, 0)
+        if n < args.max_per_category:
+            per_cat[c] = n + 1
+            selected.append(r)
 
-    # session + robots
-    sess = build_session(cache=True)
-    robots_cache = {}
+    results = []
+    t0 = time.time()
+    with ThreadPoolExecutor(max_workers=args.concurrency) as ex:
+        futs = {ex.submit(scrape_one, r, args.artifacts): r for r in selected}
+        for fut in as_completed(futs):
+            res = fut.result()
+            results.append(res)
+            if throttle > 0:
+                time.sleep(throttle)
 
-    # outputs
-    log_f = open(args.out_csv, "w", newline="", encoding="utf-8")
-    log_w = csv.DictWriter(
-        log_f,
-        fieldnames=[
-            "url","status","reason","category","source_domain","title","publish_date",
-            "txt_path","html_path","pdf_path","sha256","bytes","fetched_at"
-        ],
-    )
-    log_w.writeheader()
-    jsonl_f = open(args.jsonl_path, "a", encoding="utf-8")
+    # logs
+    log_fields = ["url","status","reason","category","source_domain","title","artifact"]
+    with open(args.out_csv, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=log_fields)
+        w.writeheader()
+        for r in results:
+            w.writerow({k: r.get(k,"") for k in log_fields})
 
-    # scrape loop
-    pbar = tqdm(df.itertuples(index=False), total=len(df), desc="Scraping")
-    for row in pbar:
-        url   = getattr(row, "url", "")
-        cat   = getattr(row, "Category_Guess", "")
-        src   = getattr(row, "Source_Domain", "")
-        ttl   = getattr(row, "Title", "")
-        pdate = getattr(row, "Publish_Date", "")
+    # corpus
+    ok = [r for r in results if r.get("status") == "ok" and r.get("text")]
+    with open(args.out_jsonl, "w", encoding="utf-8") as f:
+        for r in ok:
+            f.write(json.dumps({
+                "url": r["url"],
+                "title": r.get("title",""),
+                "text": r["text"],
+                "category": r["category"],
+                "source_domain": r["source_domain"]
+            }) + "\n")
 
-        html_path = None
-        pdf_path  = None
-        txt_path  = None
-        raw_bytes = b""
-        text_out  = ""
-        status, reason = "ok", ""
-
-        if not url:
-            log_w.writerow({"url": url, "status": "skip", "reason": "no_url",
-                            "category": cat, "source_domain": src,
-                            "title": ttl, "publish_date": pdate})
-            continue
-
-        if not args.ignore_robots and not allowed_by_robots(robots_cache, url, UA):
-            log_w.writerow({"url": url, "status": "blocked", "reason": "robots.txt",
-                            "category": cat, "source_domain": src,
-                            "title": ttl, "publish_date": pdate})
-            time.sleep(args.throttle_sec);  continue
-
-        try:
-            resp = sess.get(url, timeout=25)
-        except Exception as e:
-            log_w.writerow({"url": url, "status": "error", "reason": f"request:{e}",
-                            "category": cat, "source_domain": src,
-                            "title": ttl, "publish_date": pdate})
-            time.sleep(args.throttle_sec);  continue
-
-        if is_pdf_response(resp, url):
-            raw_bytes = resp.content or b""
-            if not raw_bytes:
-                status, reason = "error", "empty_pdf"
-            else:
-                fid = sha256_bytes(raw_bytes)[:16]
-                pdf_path = str(artifacts / "pdf" / f"{fid}.pdf")
-                with open(pdf_path, "wb") as f:
-                    f.write(raw_bytes)
-                text_out = pdf_bytes_to_text(raw_bytes)
-        else:
-            html = resp.text or ""
-            if not html.strip():
-                status, reason = "error", "empty_html"
-            else:
-                fid = sha256_text(url)[:16]
-                html_path = str(artifacts / "html" / f"{fid}.html")
-                with open(html_path, "w", encoding="utf-8") as f:
-                    f.write(html)
-                text_out = clean_html_to_text(html, base_url=url)
-
-        doc_sha = ""
-        if text_out:
-            fid_txt  = sha256_text(text_out)[:16]
-            txt_path = str(artifacts / "txt" / f"{fid_txt}.txt")
-            with open(txt_path, "w", encoding="utf-8") as f:
-                f.write(text_out)
-            doc_sha = sha256_text(text_out)
-        elif status == "ok":
-            status, reason = "warn", "no_text_extracted"
-
-        fetched_at = datetime.utcnow().isoformat() + "Z"
-
-        rec = {
-            "url": url, "title": ttl, "publish_date": pdate, "source_domain": src,
-            "category": cat, "fetched_at": fetched_at,
-            "html_path": str(html_path) if html_path else None,
-            "pdf_path":  str(pdf_path)  if pdf_path  else None,
-            "txt_path":  str(txt_path)  if txt_path  else None,
-            "sha256":    doc_sha if raw_bytes else None,
-            "bytes":     len(raw_bytes) if raw_bytes else None,
-            "status": status, "reason": (reason or None),
-        }
-        jsonl_f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-        jsonl_f.flush()
-
-        log_w.writerow({
-            "url": url, "status": status, "reason": reason, "category": cat,
-            "source_domain": src, "title": ttl, "publish_date": pdate,
-            "txt_path": str(txt_path) if txt_path else None,
-            "html_path": str(html_path) if html_path else None,
-            "pdf_path":  str(pdf_path)  if pdf_path  else None,
-            "sha256": doc_sha, "bytes": len(raw_bytes) if raw_bytes else 0,
-            "fetched_at": fetched_at,
-        })
-        time.sleep(args.throttle_sec)
-
-    log_f.close()
-    jsonl_f.close()
-
+    print(f"[OK] scraped={len(ok)} total={len(results)} secs={int(time.time()-t0)}")
+    if not ok:
+        sys.exit(2)
 
 if __name__ == "__main__":
     main()
