@@ -1,0 +1,1 @@
+- 2025-12-19: Add smoke test and batch_topic.csv fail-fast guard (open_topic.mk); add docs/SMOKE_TEST.md
