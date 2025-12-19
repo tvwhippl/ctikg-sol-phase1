@@ -44,6 +44,8 @@ topic-pull:
 		--half_life_days 999 \
 		--verbose
 
+	@wc -l batch_topic.csv | awk '{ if ($$1 <= 1) { print "ERROR: batch_topic.csv empty"; exit 1 } }'
+
 	# Merge batch into persistent queue WITHOUT overwriting batch
 	@$(PY) scripts/merge_dedup.py \
     	data/Links_Queue_master.csv \
