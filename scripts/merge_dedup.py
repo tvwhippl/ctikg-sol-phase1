@@ -35,26 +35,59 @@ def write_csv(path, rows):
 
 def main():
     ap = argparse.ArgumentParser()
+
+    # Optional modes
     ap.add_argument("--glob", default=None, help="glob of input CSVs (alt mode)")
     ap.add_argument("--out", default=None, help="output CSV (alt mode)")
-    # compat mode: 0 or 3 positionals
-    ap.add_argument("compat", nargs="*", help="[in_master.csv out_links.csv out_batch.csv]")
+
+    # CRITICAL: define the flag HERE
+    ap.add_argument(
+        "--no-clobber-batch",
+        action="store_true",
+        help="Do not overwrite batch_topic.csv if it already exists",
+    )
+
+    # Compat mode: 3 positional args
+    ap.add_argument(
+        "compat",
+        nargs="*",
+        help="[in_master.csv out_links.csv out_batch.csv]",
+    )
+
     args = ap.parse_args()
 
+    # ---- compat mode ----
     if len(args.compat) == 3:
         in_master, out_links, out_batch = args.compat
-        rows = load_rows([in_master])
+
+        rows = load_rows([in_master, out_batch])
+
+        # Always write merged queue
         write_csv(out_links, rows)
-        write_csv(out_batch, rows)
-        print(f"[OK] merge_dedup compat: {in_master} -> {len(rows)} rows -> {out_links}, {out_batch}")
+
+        # Conditionally write batch
+        if args.no_clobber_batch and os.path.exists(out_batch):
+            print(
+                f"[OK] merge_dedup compat: {in_master} -> {len(rows)} rows "
+                f"-> {out_links}; skipped overwriting {out_batch} (no-clobber)"
+            )
+        else:
+            write_csv(out_batch, rows)
+            print(
+                f"[OK] merge_dedup compat: {in_master} -> {len(rows)} rows "
+                f"-> {out_links}, {out_batch}"
+            )
         return
 
-    # flag mode (default we used earlier)
-    paths = glob.glob(args.glob or "results/**/*.csv", recursive=True)
-    out_csv = args.out or "data/Links_Queue.csv"
-    rows = load_rows(paths)
-    write_csv(out_csv, rows)
-    print(f"[OK] merged {len(paths)} files -> {len(rows)} rows -> {out_csv}")
+    # ---- alt mode (unchanged) ----
+    if args.glob and args.out:
+        paths = glob.glob(args.glob)
+        rows = load_rows(paths)
+        write_csv(args.out, rows)
+        print(f"[OK] merge_dedup glob: {len(paths)} files -> {len(rows)} rows -> {args.out}")
+        return
+
+    ap.error("Invalid arguments: use compat mode (3 files) or --glob/--out")
 
 if __name__ == "__main__":
     main()

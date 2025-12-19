@@ -36,8 +36,21 @@ topic-gen:
 
 # 2) Pull links and build the queue
 topic-pull:
-	@$(PY) scripts/pre_rank_links_v3.py --sources "$(SOURCES)" --categories configs/Category_Keywords_Expanded.json --out batch_topic.csv --limit_per_feed 600 --half_life_days 9999 --verbose
-	@$(PY) scripts/merge_dedup.py data/Links_Queue_master.csv data/Links_Queue.csv batch_topic.csv
+	@$(PY) scripts/pre_rank_links_v3.py \
+		--sources $(SOURCES) \
+		--categories configs/Category_Keywords_Expanded.json \
+		--out batch_topic.csv \
+		--limit_per_feed 600 \
+		--half_life_days 999 \
+		--verbose
+
+	# Merge batch into persistent queue WITHOUT overwriting batch
+	@$(PY) scripts/merge_dedup.py \
+    	data/Links_Queue_master.csv \
+    	data/Links_Queue.csv \
+    	batch_topic.csv \
+    	--no-clobber-batch
+
 	@$(PY) scripts/make_helper_flags.py data/Links_Queue.csv
 
 # Helper macro: emit CAT (path) and CATNAME (safe name) for latest generated YAML
