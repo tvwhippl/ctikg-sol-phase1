@@ -36,3 +36,4 @@ configs/categories/_generated/
 
 data/Links_Queue*.csv
 data/ctikg_docs_meta.json
+snapshots/
