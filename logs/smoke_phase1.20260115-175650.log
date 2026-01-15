@@ -1,0 +1,75 @@
+/Users/tvwhippl/ctikg-sol-phase1/scripts/pre_rank_links_v3.py:147: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  "Status":"New", "Collected_By":"", "Added_On":datetime.utcnow().isoformat(), "Last_Checked":""
+
+[DOMAIN] github.blog w=0.8
+[FEED] https://github.blog/feed/ -> HTTP 200; entries=10; bozo=False
+
+[DOMAIN] unit42.paloaltonetworks.com w=0.8
+[FEED] https://unit42.paloaltonetworks.com/feed/ -> HTTP 200; entries=15; bozo=False
+
+[DOMAIN] blog.talosintelligence.com w=0.8
+[FEED] https://blog.talosintelligence.com/feed/ -> HTTP 200; entries=15; bozo=False
+
+[DOMAIN] www.crowdstrike.com w=0.8
+[FEED] https://www.crowdstrike.com/blog/feed/ -> HTTP 200; entries=10; bozo=False
+
+[DOMAIN] www.trendmicro.com w=0.8
+[FEED] https://www.trendmicro.com/en_us/research/rss/all.xml -> HTTP 404; entries=0; bozo=True
+
+[DOMAIN] research.nccgroup.com w=0.8
+[FEED] https://research.nccgroup.com/feed/ -> HTTP 200; entries=0; bozo=1
+
+[DOMAIN] snyk.io w=0.8
+[FEED] https://snyk.io/blog/feed/ -> HTTP 200; entries=5; bozo=False
+
+[DOMAIN] jfrog.com w=0.8
+[FEED] https://jfrog.com/blog/feed/ -> HTTP 200; entries=10; bozo=False
+
+[DOMAIN] blog.gitguardian.com w=0.8
+[FEED] https://blog.gitguardian.com/rss/ -> HTTP 200; entries=15; bozo=False
+
+[DOMAIN] www.bleepingcomputer.com w=0.8
+[FEED] https://www.bleepingcomputer.com/feed/ -> HTTP 200; entries=13; bozo=False
+
+[DOMAIN] www.theregister.com w=0.8
+[FEED] https://www.theregister.com/security/headlines.atom -> HTTP 200; entries=50; bozo=False
+
+[DOMAIN] www.bankinfosecurity.com w=0.8
+[FEED] https://www.bankinfosecurity.com/rss-feeds -> HTTP 200; entries=20; bozo=False
+
+[DOMAIN] www.zdnet.com w=0.8
+[FEED] https://www.zdnet.com/topic/security/rss.xml -> HTTP 200; entries=20; bozo=False
+
+[DOMAIN] ubuntu.com w=0.8
+[FEED] https://ubuntu.com/security/notices/rss.xml -> HTTP 200; entries=10; bozo=False
+
+[DOMAIN] cloud.google.com w=0.8
+[FEED] https://cloud.google.com/blog/topics/threat-intelligence/rss/ -> HTTP 200; entries=0; bozo=1
+
+[DOMAIN] access.redhat.com w=0.8
+[FEED] https://access.redhat.com/blogs/product-security.atom -> HTTP 404; entries=0; bozo=1
+
+[DOMAIN] www.suse.com w=0.8
+[FEED] https://www.suse.com/support/security/rss.xml -> HTTP 404; entries=0; bozo=1
+
+[DOMAIN] www.elastic.co w=0.8
+[FEED] https://www.elastic.co/security-labs/index.xml -> HTTP 404; entries=0; bozo=1
+
+[DONE] Wrote 193 rows to batch_topic.csv
+[OK] merge_dedup compat: data/Links_Queue_master.csv -> 193 rows -> data/Links_Queue.csv; skipped overwriting batch_topic.csv (no-clobber)
+Wrote data/Links_Queue_sorted_flags.csv with 193 rows
+[INFO] triage: 'SSH & Credential Abuse' has 0 rows; skipping
+[INFO] triage: 'Cryptomining on HPC' has 0 rows; skipping
+[INFO] triage: 'NFS / File–Share Exposure' has 0 rows; skipping
+[INFO] triage: 'JupyterHub / Open OnDemand' has 0 rows; skipping
+[WARN] no rows -> Suggested_Selected_master.csv (empty)
+Selecting with configs/categories/_generated/CI_CD_Pipeline_Attacks.yaml
+[INFO] open-category selection: no keyword filter; taking top rows
+[OK] wrote 193 rows -> data/Selected_CI_CD_Pipeline_Attacks.csv
+     194 data/Selected_CI_CD_Pipeline_Attacks.csv
+Scraping CI_CD_Pipeline_Attacks (max 3)
+[OK] scraped=3 total=3 secs=53
+-rw-r--r--@ 1 tvwhippl  staff   871B Jan 15 17:58 results/scrape_log.csv
+-rw-r--r--@ 1 tvwhippl  staff    11K Jan 15 17:58 results/scraped_corpus.jsonl
+[OK] wrote 46 rows -> exports/ctikg_input.csv and docs meta -> data/ctikg_docs_meta.json
+SMOKE TEST PASSED
