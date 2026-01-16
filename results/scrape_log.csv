@@ -1,4 +1,0 @@
-url,status,reason,category,source_domain,title,artifact
-https://ubuntu.com/security/notices/USN-7956-1,ok,,unspecified,ubuntu.com,USN-7956-1: Google Guest Agent vulnerability,artifacts/ubuntu.com___security_notices_USN-7956-1.html
-https://www.bleepingcomputer.com/news/security/grubhub-confirms-hackers-stole-data-in-recent-security-breach/,ok,,unspecified,www.bleepingcomputer.com,Grubhub confirms hackers stole data in recent security breach,artifacts/www.bleepingcomputer.com___news_security_grubhub-confirms-hackers-stole-data-in-recent-security-breach_.html
-https://go.theregister.com/feed/www.theregister.com/2026/01/15/anthropics_claude_bug_cowork/,ok,,unspecified,www.theregister.com,Contagious Claude Code bug Anthropic ignored promptly spreads to Cowork,artifacts/www.theregister.com___feed_www.theregister.com_2026_01_15_anthropics_claude_bug_cowork_.html
