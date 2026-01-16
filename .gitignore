@@ -1,39 +1,11 @@
-__pycache__/
-*.pyc
-.DS_Store
-
-# raw/scratch
-batch*.csv
-Links_Queue.csv
-Links_Queue_sorted.csv
-
-# scraped artifacts (future phases)
-pdf/
-txt/
-cache/
-
-scraper_cache*
-
-artifacts/
-
-artifacts/**
-!artifacts/.gitkeep
-scraper_cache.sqlite
-
-# build artifacts & outputs
+# runtime outputs
+logs/
 results/
-artifacts/
 exports/
-configs/categories/_generated/
-*.csv
-!data/sources/*.csv
-
-# keep empty run dirs (structure only)
-!results/.gitkeep
-!exports/.gitkeep
-!artifacts/.gitkeep
-!configs/categories/_generated/.gitkeep
-
-data/Links_Queue*.csv
-data/ctikg_docs_meta.json
-snapshots/
+outputs/
+data/*.csv
+data/*.json
+tmp/
+__pycache__/
+.venv/
+.vscode/
