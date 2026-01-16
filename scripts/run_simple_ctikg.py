@@ -152,7 +152,7 @@ def main():
     ap.add_argument('--max-docs', type=int, default=10)
     ap.add_argument('--min-chars', type=int, default=500)
     ap.add_argument('--category', default=None)
-    ap.add_argument('--llm-provider', choices=['openrouter', 'ollama'], default='openrouter')
+    ap.add_argument('--llm-provider', choices=['openrouter', 'ollama'], default='ollama')
     ap.add_argument('--llm-model', default='google/gemma-2-9b-it')
     ap.add_argument('--openrouter-api-key', default=os.environ.get('OPENROUTER_API_KEY'))
     ap.add_argument('--openrouter-base-url', default=os.environ.get('OPENROUTER_BASE_URL','https://openrouter.ai/api/v1/chat/completions'))
