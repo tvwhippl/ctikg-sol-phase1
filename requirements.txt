@@ -11,3 +11,8 @@ tldextract>=5.1
 nltk>=3.9
 tqdm>=4.66
 pyyaml>=6.0
+
+trafilatura
+chardet
+beautifulsoup4
+requests

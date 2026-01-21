@@ -1,3 +1,5 @@
+export LLM_PROVIDER=ollama
+export LLM_MODEL=llama3.1:8b-instruct
 #!/usr/bin/env bash
 set -euo pipefail
 

@@ -1,0 +1,16 @@
+{
+  "domains": {
+    "thehackernews.com": {
+      "weight": 0.9,
+      "rss": [
+        "https://feeds.feedburner.com/TheHackersNews"
+      ]
+    },
+    "securityaffairs.co": {
+      "weight": 0.8,
+      "rss": [
+        "https://securityaffairs.co/wordpress/feed"
+      ]
+    }
+  }
+}

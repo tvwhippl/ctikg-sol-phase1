@@ -1,38 +1,31 @@
+# runtime outputs
+logs/
+results/
+exports/
+outputs/
+data/*.csv
+data/*.json
+tmp/
+__pycache__/
+.venv/
+.vscode/
+
+logs/
+results/
+exports/
+data/*.csv
+# outputs and artifacts
+results/
+exports/
+outputs/
+artifacts/
+batch_topic.csv
+data/Links_Queue_sorted_flags.csv
+data/Links_Queue_master.csv
+scraper_cache.sqlite
+.snapshots/
+# OS / editor junk
+.DS_Store
+.vscode/
 __pycache__/
 *.pyc
-.DS_Store
-
-# raw/scratch
-batch*.csv
-Links_Queue.csv
-Links_Queue_sorted.csv
-
-# scraped artifacts (future phases)
-pdf/
-txt/
-cache/
-
-scraper_cache*
-
-artifacts/
-
-artifacts/**
-!artifacts/.gitkeep
-scraper_cache.sqlite
-
-# build artifacts & outputs
-results/
-artifacts/
-exports/
-configs/categories/_generated/
-*.csv
-!data/sources/*.csv
-
-# keep empty run dirs (structure only)
-!results/.gitkeep
-!exports/.gitkeep
-!artifacts/.gitkeep
-!configs/categories/_generated/.gitkeep
-
-data/Links_Queue*.csv
-data/ctikg_docs_meta.json

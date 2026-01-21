@@ -1,22 +1,112 @@
 {
-  "rss": [
-    {"url":"https://github.blog/feed/"},
-    {"url":"https://unit42.paloaltonetworks.com/feed/"},
-    {"url":"https://blog.talosintelligence.com/feed/"},
-    {"url":"https://www.crowdstrike.com/blog/feed/"},
-    {"url":"https://www.trendmicro.com/en_us/research/rss/all.xml"},
-    {"url":"https://research.nccgroup.com/feed/"},
-    {"url":"https://snyk.io/blog/feed/"},
-    {"url":"https://jfrog.com/blog/feed/"},
-    {"url":"https://blog.gitguardian.com/rss/"},
-    {"url":"https://www.bleepingcomputer.com/feed/"},
-    {"url":"https://www.theregister.com/security/headlines.atom"},
-    {"url":"https://www.bankinfosecurity.com/rss-feeds"},
-    {"url":"https://www.zdnet.com/topic/security/rss.xml"},
-    {"url":"https://ubuntu.com/security/notices/rss.xml"},
-    {"url":"https://cloud.google.com/blog/topics/threat-intelligence/rss/"},
-    {"url":"https://access.redhat.com/blogs/product-security.atom"},
-    {"url":"https://www.suse.com/support/security/rss.xml"},
-    {"url":"https://www.elastic.co/security-labs/index.xml"}
-  ]
+  "domains": {
+    "github.blog": {
+      "weight": 0.8,
+      "rss": [
+        "https://github.blog/feed/"
+      ]
+    },
+    "unit42.paloaltonetworks.com": {
+      "weight": 0.8,
+      "rss": [
+        "https://unit42.paloaltonetworks.com/feed/"
+      ]
+    },
+    "blog.talosintelligence.com": {
+      "weight": 0.8,
+      "rss": [
+        "https://blog.talosintelligence.com/feed/"
+      ]
+    },
+    "www.crowdstrike.com": {
+      "weight": 0.8,
+      "rss": [
+        "https://www.crowdstrike.com/blog/feed/"
+      ]
+    },
+    "www.trendmicro.com": {
+      "weight": 0.8,
+      "rss": [
+        "https://www.trendmicro.com/en_us/research/rss/all.xml"
+      ]
+    },
+    "research.nccgroup.com": {
+      "weight": 0.8,
+      "rss": [
+        "https://research.nccgroup.com/feed/"
+      ]
+    },
+    "snyk.io": {
+      "weight": 0.8,
+      "rss": [
+        "https://snyk.io/blog/feed/"
+      ]
+    },
+    "jfrog.com": {
+      "weight": 0.8,
+      "rss": [
+        "https://jfrog.com/blog/feed/"
+      ]
+    },
+    "blog.gitguardian.com": {
+      "weight": 0.8,
+      "rss": [
+        "https://blog.gitguardian.com/rss/"
+      ]
+    },
+    "www.bleepingcomputer.com": {
+      "weight": 0.8,
+      "rss": [
+        "https://www.bleepingcomputer.com/feed/"
+      ]
+    },
+    "www.theregister.com": {
+      "weight": 0.8,
+      "rss": [
+        "https://www.theregister.com/security/headlines.atom"
+      ]
+    },
+    "www.bankinfosecurity.com": {
+      "weight": 0.8,
+      "rss": [
+        "https://www.bankinfosecurity.com/rss-feeds"
+      ]
+    },
+    "www.zdnet.com": {
+      "weight": 0.8,
+      "rss": [
+        "https://www.zdnet.com/topic/security/rss.xml"
+      ]
+    },
+    "ubuntu.com": {
+      "weight": 0.8,
+      "rss": [
+        "https://ubuntu.com/security/notices/rss.xml"
+      ]
+    },
+    "cloud.google.com": {
+      "weight": 0.8,
+      "rss": [
+        "https://cloud.google.com/blog/topics/threat-intelligence/rss/"
+      ]
+    },
+    "access.redhat.com": {
+      "weight": 0.8,
+      "rss": [
+        "https://access.redhat.com/blogs/product-security.atom"
+      ]
+    },
+    "www.suse.com": {
+      "weight": 0.8,
+      "rss": [
+        "https://www.suse.com/support/security/rss.xml"
+      ]
+    },
+    "www.elastic.co": {
+      "weight": 0.8,
+      "rss": [
+        "https://www.elastic.co/security-labs/index.xml"
+      ]
+    }
+  }
 }
