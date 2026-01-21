@@ -113,6 +113,9 @@ def main():
     args = ap.parse_args()
 
     with open(args.sources, "r") as f: sources = json.load(f)
+
+    if "domains" not in sources or not sources.get("domains"):
+        raise SystemExit("ERROR: sources config must contain non-empty top-level 'domains' object. See configs/sources/README-domains.md")
     with open(args.categories, "r") as f: categories = json.load(f)
 
     rows, seen = [], set()
