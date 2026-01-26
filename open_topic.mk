@@ -36,6 +36,7 @@ topic-gen:
 
 # 2) Pull links and build the queue
 topic-pull:
+	@$(MAKE) topic-setup
 	@$(PY) scripts/pre_rank_links_v3.py \
 		--sources $(SOURCES) \
 		--categories configs/Category_Keywords_Expanded.json \
