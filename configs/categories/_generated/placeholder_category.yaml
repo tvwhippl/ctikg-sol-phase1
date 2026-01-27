@@ -1,0 +1,9 @@
+# Placeholder category to allow local phase-1 runs.
+# Replace or expand with real categories later.
+name: Placeholder Category
+id: placeholder_category
+description: "Temporary placeholder to allow topic selection in local runs"
+keywords: ["threat", "security", "vulnerability"]
+feeds:
+  - "https://www.zdnet.com/topic/security/rss.xml"
+  - "https://www.bankinfosecurity.com/rss-feeds"
