@@ -25,6 +25,38 @@ import argparse
 from tqdm import tqdm
 import requests
 
+def sanitize_generated_text(generated_text):
+    """
+    Normalize LLM output so JSON can be parsed reliably.
+    Removes markdown fences, trims wrappers, and extracts JSON blocks.
+    """
+    if not isinstance(generated_text, str):
+        return generated_text
+
+    s = generated_text.strip()
+
+    # Remove fenced code blocks ``` or ```json
+    if s.startswith("```"):
+        parts = s.split("```")
+        if len(parts) >= 3:
+            s = parts[1].strip()
+
+    # Remove leading language hints
+    if s.lower().startswith("json"):
+        s = s[4:].strip()
+
+    # Strip wrapping quotes
+    if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
+        s = s[1:-1].strip()
+
+    # If text contains extra prose, extract the JSON object
+    if not s.startswith("{") and "{" in s and "}" in s:
+        start = s.find("{")
+        end = s.rfind("}")
+        s = s[start:end + 1]
+
+    return s
+
 try:
     from json_repair import repair
 except Exception:
@@ -108,7 +140,7 @@ def send_to_openrouter(openrouter_key, model, prompt, timeout=120):
     if not openrouter_key:
         raise ValueError("OPENROUTER_API_KEY not set or empty")
 
-    url = "https://api.openrouter.ai/v1/chat/completions"
+    url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {"Authorization": f"Bearer {openrouter_key}", "Content-Type": "application/json"}
     payload = {"model": model, "messages": [{"role": "user", "content": prompt}]}
     r = requests.post(url, headers=headers, json=payload, timeout=timeout)
@@ -144,6 +176,11 @@ def main():
     p.add_argument("--dry-run", action="store_true", help="do not send requests; just print first prompts")
     p.add_argument("--confirm", action="store_true", help="required to run if max-docs > 25")
     args = p.parse_args()
+
+    # Safe OpenRouter fallback: prevent forwarding local model names
+    if args.provider == "openrouter":
+        if args.model.startswith("llama") or ":" in args.model:
+            args.model = os.environ.get("CTIKG_OR_TEST_MODEL", "gpt-4o-mini")
 
     if args.max_docs > 25 and not args.confirm:
         print("[SAFE] Attempting to run more than 25 docs requires --confirm. Exiting.")
@@ -201,23 +238,31 @@ def main():
             generated = json.dumps({"error": str(e)})
             print(f"[ERR] doc {doc_id}: {e}")
 
-        # parse / repair
+        # parse / repair (with sanitizer)
         parsed = None
+        clean_text = sanitize_generated_text(generated)
+
         try:
-            parsed = json.loads(generated)
+            parsed = json.loads(clean_text)
         except Exception:
             if repair:
                 try:
-                    repaired = repair(generated)
+                    repaired = repair(clean_text)
                     parsed = json.loads(repaired)
                 except Exception:
                     parsed = {"_raw": generated}
             else:
                 parsed = {"_raw": generated}
 
+        usage = None
+        if isinstance(resp_json, dict):
+            usage = resp_json.get("usage")
+
         result_obj = {"doc_id": doc_id, "result": parsed}
+        if usage:
+            result_obj["_usage"] = usage
+
         out_f.write(json.dumps(result_obj, ensure_ascii=False) + "\n")
-        out_f.flush()
 
         # throttle to avoid rate-limit / cost spikes
         if args.throttle_ms:
