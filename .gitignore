@@ -29,3 +29,25 @@ scraper_cache.sqlite
 .vscode/
 __pycache__/
 *.pyc
+# local venv and python caches
+.venv/
+env/
+venv/
+__pycache__/
+*.pyc
+
+# runtime outputs and logs
+results/
+tmp/
+*.log
+
+# notebooks & checkpoints
+.ipynb_checkpoints/
+*.ipynb
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
