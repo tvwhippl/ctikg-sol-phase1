@@ -1,220 +1,138 @@
-# scripts/run_simple_ctikg.py
-# Adapter: Phase-1 results -> Simple CTIKG single-prompt run
-import argparse
-import json
-import os
-import sys
-from pathlib import Path
-
-# Optional: import your LLM client wrappers here
-# We'll support OpenRouter (HTTP) and Ollama (local) via simple adapters
+#!/usr/bin/env python3
+"""
+Simple CTIKG runner that uses Ollama HTTP completions.
+Input: exports/ctikg_input.csv (CSV with a 'text' column or raw doc per line)
+Output: results/simple_ctikg_results.jsonl
+Usage:
+  export OLLAMA_HOST="http://127.0.0.1:11434"
+  python scripts/run_simple_ctikg.py --input exports/ctikg_input.csv --out results/simple_ctikg_results.jsonl --model llama3.2 --viz results/simple_ctikg_viz.html
+"""
+import os, csv, json, time, argparse
+from tqdm import tqdm
 import requests
+try:
+    from json_repair import repair
+except Exception:
+    repair = None
 
+def get_available_models(ollama_host):
+    url = ollama_host.rstrip("/") + "/v1/models"
+    r = requests.get(url, timeout=10)
+    r.raise_for_status()
+    data = r.json().get("data", [])
+    return [m["id"] for m in data]
 
-def load_jsonl(path):
-    docs = []
-    with open(path, 'r', encoding='utf-8') as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                docs.append(json.loads(line))
-            except Exception as e:
-                print(f"WARN: failed to parse jsonl line: {e}", file=sys.stderr)
-    return docs
+def send_to_ollama(ollama_host, model, prompt, timeout=120):
+    models = get_available_models(ollama_host)
 
+    if model not in models:
+        print(f"[WARN] Requested model '{model}' not found. Available models: {models}")
+        model = models[0]
+        print(f"[WARN] Falling back to model '{model}'")
 
-def write_json(obj, path):
-    with open(path, 'w', encoding='utf-8') as fh:
-        json.dump(obj, fh, indent=2, ensure_ascii=False)
+    url = ollama_host.rstrip("/") + "/v1/chat/completions"
 
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": "You are a cybersecurity knowledge extraction engine."},
+            {"role": "user", "content": prompt}
+        ]
+    }
 
-def prepare_input(docs, max_docs, min_chars):
-    selected = []
-    for d in docs:
-        content = d.get('content') or d.get('text') or d.get('body') or ''
-        title = d.get('title') or d.get('headline') or ''
-        url = d.get('url') or d.get('source') or ''
-        if not content or len(content) < min_chars:
-            continue
-        selected.append({'title': title, 'source': url, 'text': content})
-        if len(selected) >= max_docs:
-            break
-    return selected
+    resp = requests.post(url, json=payload, timeout=timeout)
+    resp.raise_for_status()
+    return resp.json()
 
-
-def build_prompt(input_docs):
-    # This is intentionally simple and explicit. Keep prompt small for token safety.
-    prompt = (
-        "Extract entities and relations from the following CTI articles.\n"
-        "Return a JSON object with two keys: \"nodes\" and \"edges\".\n"
-        "Nodes should be objects with {id, label, type}. Edges should be {source, target, label}.\n"
-        "Be concise. Use stable IDs (slugify label).\n\n"
+def build_prompt(doc_text):
+    # Minimal single-shot prompt (edit as you like)
+    return (
+        "Extract a JSON list of triples from the following CTI article text. "
+        "Each triple should be an object with keys: subject, relation, object, sentence. "
+        "Return a single JSON object: {\"doc_id\": <id>, \"triples\": [ ... ]}.\n\n"
+        "Text:\n" + doc_text + "\n\nOutput only valid JSON."
     )
-    for i, doc in enumerate(input_docs, 1):
-        prompt += f"Article {i}: Title: {doc.get('title','(no title)')}\n"
-        txt = doc.get('text','').strip()
-        if len(txt) > 2000:
-            txt = txt[:2000] + '...'
-        prompt += f"{txt}\n\n"
-    prompt += "\nReturn only valid JSON."
-    return prompt
-
-
-# Minimal OpenRouter client wrapper (single completion)
-
-def openrouter_complete(api_key, base_url, model, prompt, max_tokens=1024):
-    headers = {'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'}
-    payload = {
-        'model': model,
-        'messages': [
-            {'role': 'user', 'content': prompt}
-        ],
-        'max_tokens': max_tokens,
-        'temperature': 0.0
-    }
-    r = requests.post(base_url, headers=headers, json=payload, timeout=120)
-    r.raise_for_status()
-    j = r.json()
-    # openrouter chat completions structure: choices[0].message.content
-    try:
-        return j['choices'][0]['message']['content']
-    except Exception:
-        # Fallback: try raw text
-        return json.dumps(j)
-
-
-# Minimal Ollama wrapper (local)
-def ollama_complete(base_url, model, prompt, max_tokens=1024):
-    url = f"{base_url.rstrip('/')}/chat/completions"
-    payload = {
-        'model': model,
-        'messages': [{'role': 'user', 'content': prompt}],
-        'max_tokens': max_tokens,
-        'temperature': 0.0
-    }
-    r = requests.post(url, json=payload, timeout=120)
-    r.raise_for_status()
-    j = r.json()
-    try:
-        return j['choices'][0]['message']['content']
-    except Exception:
-        return json.dumps(j)
-
-
-def parse_json_output(raw_text):
-    # Try to extract JSON substring robustly
-    text = raw_text.strip()
-    # naive attempt: find first { and last }
-    start = text.find('{')
-    end = text.rfind('}')
-    if start == -1 or end == -1 or end <= start:
-        raise ValueError('No JSON object found in model output')
-    sub = text[start:end+1]
-    try:
-        return json.loads(sub)
-    except Exception as e:
-        # last resort: try json_repair if available
-        try:
-            import jsonrepair
-            repaired = jsonrepair.repair(sub)
-            return json.loads(repaired)
-        except Exception:
-            raise
-
-
-def render_pyvis(graph_obj, out_html):
-    try:
-        from pyvis.network import Network
-    except Exception:
-        raise RuntimeError('pyvis not installed; pip install pyvis')
-    net = Network(height='800px', width='100%', notebook=False)
-    id_map = {}
-    for n in graph_obj.get('nodes', []):
-        nid = n.get('id') or n.get('label')
-        label = n.get('label')
-        t = n.get('type')
-        net.add_node(nid, label=label, title=t)
-        id_map[label] = nid
-    for e in graph_obj.get('edges', []):
-        s = e.get('source')
-        t = e.get('target')
-        label = e.get('label')
-        net.add_edge(s, t, title=label)
-    net.show(out_html)
-
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument('--input', required=True, help='results/scraped_corpus.jsonl')
-    ap.add_argument('--output', required=True, help='output directory')
-    ap.add_argument('--max-docs', type=int, default=10)
-    ap.add_argument('--min-chars', type=int, default=500)
-    ap.add_argument('--category', default=None)
-    ap.add_argument('--llm-provider', choices=['openrouter', 'ollama'], default='ollama')
-    ap.add_argument('--llm-model', default='google/gemma-2-9b-it')
-    ap.add_argument('--openrouter-api-key', default=os.environ.get('OPENROUTER_API_KEY'))
-    ap.add_argument('--openrouter-base-url', default=os.environ.get('OPENROUTER_BASE_URL','https://openrouter.ai/api/v1/chat/completions'))
-    ap.add_argument('--ollama-base-url', default=os.environ.get('LLM_BASE_URL','http://127.0.0.1:11434'))
-    ap.add_argument('--dry-run', action='store_true')
-    args = ap.parse_args()
+    p = argparse.ArgumentParser()
+    p.add_argument("--input", default="exports/ctikg_input.csv")
+    p.add_argument("--out", default="results/simple_ctikg_results.jsonl")
+    p.add_argument("--model", default="llama3.2")
+    p.add_argument("--ollama-host", default=os.environ.get("OLLAMA_HOST","http://127.0.0.1:11434"))
+    p.add_argument("--viz", default=None)
+    p.add_argument("--col", default="text", help="CSV column with document text; if not found, read whole line")
+    args = p.parse_args()
 
-    out_dir = Path(args.output)
-    out_dir.mkdir(parents=True, exist_ok=True)
+    os.makedirs(os.path.dirname(args.out), exist_ok=True)
+    rows = []
 
-    docs = load_jsonl(args.input)
-    print(f'Loaded {len(docs)} docs from {args.input}', file=sys.stderr)
+    # Detect input format
+    if not os.path.exists(args.input):
+        print("Input file not found:", args.input)
+        raise SystemExit(2)
 
-    # filter by category if requested
-    if args.category:
-        docs = [d for d in docs if d.get('category') == args.category]
-        print(f'After category filter: {len(docs)} docs', file=sys.stderr)
+    # try reading as CSV with header
+    with open(args.input, 'r', encoding='utf-8', errors='replace') as fh:
+        first = fh.readline()
+        if ',' in first and args.col in first:
+            fh.seek(0)
+            rdr = csv.DictReader(fh)
+            for r in rdr:
+                rows.append(r)
+        else:
+            # fallback: treat each line as a doc
+            fh.seek(0)
+            for i, line in enumerate(fh):
+                rows.append({args.col: line.strip(), "id": str(i)})
 
-    selected = prepare_input(docs, args.max_docs, args.min_chars)
-    print(f'Selected {len(selected)} docs for Simple CTIKG', file=sys.stderr)
+    print(f"Found {len(rows)} docs in {args.input}")
+    out_f = open(args.out, "w", encoding='utf-8')
 
-    if len(selected) == 0:
-        print('ERROR: no documents selected', file=sys.stderr)
-        sys.exit(2)
+    for i, r in enumerate(tqdm(rows, desc="Processing")):
+        doc_id = r.get("id") or r.get("doc_id") or str(i)
+        doc_text = r.get(args.col) or r.get("text") or r.get("content") or ""
+        prompt = build_prompt(doc_text)
+        try:
+            resp = send_to_ollama(args.ollama_host, args.model, prompt)
+            # Ollama returns structure with 'choices' or direct 'completion' depending on version; handle generically:
+            body = resp
+            # Try to extract generated text:
+            generated = None
+            if isinstance(body, dict):
+                # new Ollama style: 'choices' -> [{'message': {'content': '...'}}]
+                c = body.get("choices")
+                if c and isinstance(c, list):
+                    generated = c[0]["message"]["content"]
+                else:
+                    # sometimes the model returns a 'text' or 'completion' field:
+                    generated = body.get("text") or body.get("completion")
+            if generated is None:
+                generated = json.dumps(body)
+        except Exception as e:
+            print("LLM call failed for doc", doc_id, ":", e)
+            generated = json.dumps({"error": str(e)})
 
-    input_docs_path = out_dir / 'input_docs.json'
-    write_json(selected, input_docs_path)
+        # attempt to repair if it is not valid JSON
+        parsed = None
+        try:
+            parsed = json.loads(generated)
+        except Exception:
+            if repair:
+                try:
+                    repaired = repair(generated)
+                    parsed = json.loads(repaired)
+                except Exception:
+                    parsed = {"_raw": generated}
+            else:
+                parsed = {"_raw": generated}
 
-    if args.dry_run:
-        print('Dry run complete', file=sys.stderr)
-        sys.exit(0)
+        result_obj = {"doc_id": doc_id, "result": parsed}
+        out_f.write(json.dumps(result_obj, ensure_ascii=False) + "\n")
+        out_f.flush()
+        time.sleep(0.1)  # small throttle; adjust if needed
 
-    prompt = build_prompt(selected)
+    out_f.close()
+    print("Wrote results to", args.out)
 
-    if args.llm_provider == 'openrouter':
-        if not args.openrouter_api_key:
-            print('ERROR: OPENROUTER_API_KEY required for OpenRouter provider', file=sys.stderr)
-            sys.exit(3)
-        raw = openrouter_complete(args.openrouter_api_key, args.openrouter_base_url, args.llm_model, prompt)
-    else:
-        raw = ollama_complete(args.ollama_base_url, args.llm_model, prompt)
-
-    # try parse
-    try:
-        graph_obj = parse_json_output(raw)
-    except Exception as e:
-        print('ERROR: failed to parse model output as JSON:', e, file=sys.stderr)
-        print('Raw model output (begin):', file=sys.stderr)
-        print(raw[:4000], file=sys.stderr)
-        sys.exit(4)
-
-    out_json = out_dir / 'simple_ctikg_graph.json'
-    write_json(graph_obj, out_json)
-
-    out_html = out_dir / 'simple_ctikg_graph.html'
-    try:
-        render_pyvis(graph_obj, str(out_html))
-    except Exception as e:
-        print('WARNING: rendering failed:', e, file=sys.stderr)
-
-    print('Simple CTIKG run complete. Outputs:', out_json, out_html, file=sys.stderr)
-
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

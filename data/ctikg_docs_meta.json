@@ -1,9 +1,16 @@
 {
-  "docs": 3,
-  "rows": 48,
+  "docs": 61,
+  "rows": 1708,
   "sources": {
-    "ubuntu.com": 1,
-    "www.bleepingcomputer.com": 1,
-    "www.theregister.com": 1
+    "jfrog.com": 2,
+    "github.blog": 2,
+    "ubuntu.com": 10,
+    "unit42.paloaltonetworks.com": 3,
+    "www.bleepingcomputer.com": 11,
+    "www.theregister.com": 5,
+    "www.crowdstrike.com": 3,
+    "snyk.io": 2,
+    "blog.gitguardian.com": 3,
+    "www.bankinfosecurity.com": 20
   }
 }
