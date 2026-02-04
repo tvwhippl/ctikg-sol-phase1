@@ -53,71 +53,130 @@ def sanitize_text(s: str) -> str:
     return s.encode("utf-8", errors="replace").decode("utf-8", errors="replace")
 
 # --- Deterministic pipeline (TF-IDF + KMeans) ---
+
 def deterministic_topics_from_texts(
     texts: List[str],
     k: int = 12,
     seed_boost_indexes: Optional[List[int]] = None,
 ) -> List[Dict[str, Any]]:
     """
-    Build topics using TF-IDF + KMeans. Returns list of candidate dicts.
-    seed_boost_indexes: indices in `texts` that should be weighted more heavily.
+    Build topics using TF-IDF + KMeans, robust to tiny corpora.
+    - Adjusts TF-IDF parameters for small n_docs.
+    - Falls back to simple heuristic if TF-IDF/KMeans can't run.
     """
     import numpy as np
     from sklearn.feature_extraction.text import TfidfVectorizer
     from sklearn.cluster import KMeans
 
-    clean_texts = [re.sub(r"\s+", " ", t.strip()) for t in texts]
-    if not any(clean_texts):
+    # Clean texts and remove empty documents
+    clean_texts = [re.sub(r"\\s+", " ", (t or "").strip()) for t in texts]
+    clean_texts = [t for t in clean_texts if t]
+    n_docs = max(0, len(clean_texts))
+    if n_docs == 0:
         return []
 
-    vectorizer = TfidfVectorizer(max_df=0.8, min_df=1, ngram_range=(1,2), max_features=5000)
-    X = vectorizer.fit_transform(clean_texts)
+    # Adjust TF-IDF params based on corpus size to avoid scikit errors
+    if n_docs == 1:
+        max_df = 1.0
+        min_df = 1
+        max_features = 500
+    elif n_docs == 2:
+        # set max_df high enough so max_df * n_docs >= min_df (1)
+        max_df = 1.0
+        min_df = 1
+        max_features = 1000
+    else:
+        max_df = 0.8
+        min_df = 1
+        max_features = min(5000, max(1000, n_docs * 50))
 
-    # seed-boost: simple approach - duplicate seed rows to bias clustering
+    vectorizer = TfidfVectorizer(max_df=max_df, min_df=min_df, ngram_range=(1,2), max_features=max_features)
+    try:
+        X = vectorizer.fit_transform(clean_texts)
+    except Exception as e:
+        # Fallback: build trivial topics from each document's top tokens
+        logger.warning("TF-IDF failed (%s). Falling back to simple token heuristic.", e)
+        results = []
+        for idx, doc in enumerate(clean_texts):
+            tokens = [t for t in re.findall(r'\\w+', doc.lower()) if len(t) > 3]
+            top_terms = tokens[:3] or [doc[:20]]
+            label = " ".join(top_terms)
+            canonical = f"{idx}-{slugify('-'.join(top_terms))}"
+            results.append({
+                "label": sanitize_text(label),
+                "canonical_id": sanitize_text(canonical),
+                "description": f"Fallback topic from document {idx}",
+                "examples": [str(idx)],
+                "confidence": 0.5,
+                "generation_mode": "deterministic",
+            })
+        return results
+
+    # If vectorizer produced no features, fallback similarly
+    if X.shape[1] == 0:
+        logger.warning("TF-IDF produced zero features; using fallback.")
+        results = []
+        for idx, doc in enumerate(clean_texts):
+            tokens = [t for t in re.findall(r'\\w+', doc.lower()) if len(t) > 3]
+            top_terms = tokens[:3] or [doc[:20]]
+            label = " ".join(top_terms)
+            canonical = f"{idx}-{slugify('-'.join(top_terms))}"
+            results.append({
+                "label": sanitize_text(label),
+                "canonical_id": sanitize_text(canonical),
+                "description": f"Fallback topic from document {idx}",
+                "examples": [str(idx)],
+                "confidence": 0.5,
+                "generation_mode": "deterministic",
+            })
+        return results
+
+    # seed-boost: duplicate seed vectors to bias clustering
     if seed_boost_indexes:
-        X_list = [X]
+        X_list = [X.toarray()]
         for idx in seed_boost_indexes:
             if 0 <= idx < X.shape[0]:
-                # add the same vector multiple times (weight 3)
+                # repeat the vector a couple times to bias KMeans
                 for _ in range(2):
-                    X_list.append(X[idx])
-        X = np.vstack([x.toarray() if hasattr(x, "toarray") else x for x in X_list])
+                    X_list.append(X[idx].toarray())
+        Xmat = np.vstack(X_list)
+    else:
+        Xmat = X.toarray()
 
-    # run KMeans
-    k = min(k, max(1, X.shape[0]))
-    km = KMeans(n_clusters=k, random_state=42, n_init=10)
-    km.fit(X)
-    centers = km.cluster_centers_
+    # Ensure k <= n_docs (KMeans cannot have more clusters than samples)
+    k = max(1, min(k, Xmat.shape[0]))
+
+    # Use MiniBatchKMeans for larger n_docs, otherwise KMeans
+    try:
+        if Xmat.shape[0] > 300:
+            from sklearn.cluster import MiniBatchKMeans as MBK
+            km = MBK(n_clusters=k, random_state=42)
+        else:
+            km = KMeans(n_clusters=k, random_state=42, n_init=10)
+        km.fit(Xmat)
+        centers = km.cluster_centers_
+    except Exception as e:
+        logger.warning("KMeans failed (%s); using single-cluster fallback.", e)
+        centers = [Xmat.mean(axis=0)]
+
     terms = vectorizer.get_feature_names_out()
 
-    # For each cluster, pick top terms
     from numpy import argsort
     results = []
+    # Refit a KMeans on the original docs if shapes differ
+    try:
+        labels = km.predict(X.toarray()) if hasattr(km, "predict") else [0]*n_docs
+    except Exception:
+        labels = [0]*n_docs
+
     for i, center in enumerate(centers):
         top_idx = list(argsort(center)[-6:][::-1])
         top_terms = [terms[t] for t in top_idx if t < len(terms)]
-        label = " ".join(top_terms[:3]) or f"topic-{i}"
+        label = " ".join(top_terms[:3]) if top_terms else f"topic-{i}"
         canonical = f"{i}-{slugify('-'.join(top_terms))}"
         description = f"Cluster {i} — top terms: {', '.join(top_terms[:6])}"
-        # find representative docs (closest to center)
-        # compute cosine distance on dense arrays
-        import numpy.linalg as la
-        arrs = X if isinstance(X, (list, tuple)) else X
-        # when we duplicated seed rows, arrs is dense; convert to dense matrix
-        if hasattr(X, "shape") and len(X.shape) == 2:
-            dense = X
-        else:
-            dense = X
-        # fallback: choose the original doc with same cluster label via km.predict if shapes align
-        # We compute using the original km.predict on the original matrix (re-fit if needed)
-        try:
-            # re-predict on original docs
-            original_km = KMeans(n_clusters=k, random_state=42, n_init=10)
-            original_km.fit(vectorizer.transform(clean_texts))
-            labels = original_km.labels_
-            doc_idxs = [j for j, lbl in enumerate(labels) if lbl == i]
-        except Exception:
-            doc_idxs = []
+        # representative docs for this cluster
+        doc_idxs = [j for j, lbl in enumerate(labels) if lbl == i]
         examples = [str(idx) for idx in (doc_idxs[:3] if doc_idxs else [0])]
         results.append({
             "label": sanitize_text(label),
@@ -129,7 +188,6 @@ def deterministic_topics_from_texts(
         })
     return results
 
-# --- Hybrid pipeline ---
 def hybrid_topics(texts: List[str], llm_client: LLMClient, m: int = 20, **llm_kwargs) -> List[Dict[str, Any]]:
     # produce M deterministic candidates then refine with LLM
     det = deterministic_topics_from_texts(texts, k=min(24, max(4, m)))
