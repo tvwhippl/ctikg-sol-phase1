@@ -26,7 +26,10 @@ from typing import List, Dict, Any, Optional, Tuple
 from pathlib import Path
 
 # Local helper (LLM wrapper)
-from gen_category_from_llm import LLMClient, canned_llm_response_for_dry_run
+try:
+    from scripts.gen_category_from_llm import LLMClient, canned_llm_response_for_dry_run
+except Exception:
+    from gen_category_from_llm import LLMClient, canned_llm_response_for_dry_run
 
 # --- Logging ---
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
