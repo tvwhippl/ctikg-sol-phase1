@@ -110,28 +110,39 @@ def deterministic_topics_from_texts(
                 "confidence": 0.5,
                 "generation_mode": "deterministic",
             })
-    
-    # --- dedupe: collapse identical labels (case-insensitive), keep highest confidence
+    # --- dedupe: collapse identical labels (case-insensitive), keep highest-confidence
+    # Defensive: ensure 'results' exists and is a list
+    try:
+        if not isinstance(results, list):
+            results = list(results) if results is not None else []
+    except NameError:
+        results = []
+    except Exception:
+        results = []
+
     dedup_map = {}
     for item in results:
-        key = item.get("label","").lower().strip()
+        if not isinstance(item, dict):
+            continue
+        key = (item.get("label","") or "").lower().strip()
         if not key:
             continue
-        if key in dedup_map:
-            # keep the item with higher confidence
-            if item.get("confidence", 0) > dedup_map[key].get("confidence", 0):
-                dedup_map[key] = item
-        else:
+        existing = dedup_map.get(key)
+        if existing is None or item.get("confidence", 0) > existing.get("confidence", 0):
             dedup_map[key] = item
-    # preserve original order of first appearance
+
+    # preserve order of first appearance of unique labels
     seen = set()
     deduped = []
     for r in results:
-        k = r.get("label","").lower().strip()
+        if not isinstance(r, dict):
+            continue
+        k = (r.get("label","") or "").lower().strip()
         if k and k not in seen and k in dedup_map:
             deduped.append(dedup_map[k])
             seen.add(k)
     results = deduped
+
     return results
 
     # If vectorizer produced no features, fallback similarly
