@@ -110,7 +110,29 @@ def deterministic_topics_from_texts(
                 "confidence": 0.5,
                 "generation_mode": "deterministic",
             })
-        return results
+    
+    # --- dedupe: collapse identical labels (case-insensitive), keep highest confidence
+    dedup_map = {}
+    for item in results:
+        key = item.get("label","").lower().strip()
+        if not key:
+            continue
+        if key in dedup_map:
+            # keep the item with higher confidence
+            if item.get("confidence", 0) > dedup_map[key].get("confidence", 0):
+                dedup_map[key] = item
+        else:
+            dedup_map[key] = item
+    # preserve original order of first appearance
+    seen = set()
+    deduped = []
+    for r in results:
+        k = r.get("label","").lower().strip()
+        if k and k not in seen and k in dedup_map:
+            deduped.append(dedup_map[k])
+            seen.add(k)
+    results = deduped
+    return results
 
     # If vectorizer produced no features, fallback similarly
     if X.shape[1] == 0:
