@@ -110,40 +110,7 @@ def deterministic_topics_from_texts(
                 "confidence": 0.5,
                 "generation_mode": "deterministic",
             })
-    # --- dedupe: collapse identical labels (case-insensitive), keep highest-confidence
-    # Defensive: ensure 'results' exists and is a list
-    try:
-        if not isinstance(results, list):
-            results = list(results) if results is not None else []
-    except NameError:
-        results = []
-    except Exception:
-        results = []
-
-    dedup_map = {}
-    for item in results:
-        if not isinstance(item, dict):
-            continue
-        key = (item.get("label","") or "").lower().strip()
-        if not key:
-            continue
-        existing = dedup_map.get(key)
-        if existing is None or item.get("confidence", 0) > existing.get("confidence", 0):
-            dedup_map[key] = item
-
-    # preserve order of first appearance of unique labels
-    seen = set()
-    deduped = []
-    for r in results:
-        if not isinstance(r, dict):
-            continue
-        k = (r.get("label","") or "").lower().strip()
-        if k and k not in seen and k in dedup_map:
-            deduped.append(dedup_map[k])
-            seen.add(k)
-    results = deduped
-
-    return results
+        return results
 
     # If vectorizer produced no features, fallback similarly
     if X.shape[1] == 0:
@@ -373,6 +340,35 @@ def select_topics(
         outp = Path(out_path)
         outp.write_text(json.dumps(results, indent=2), encoding="utf-8")
         logger.info("Wrote %d categories to %s", len(results), out_path)
+    # --- conservative dedupe: collapse identical labels if more than one result exists
+    try:
+        if isinstance(results, list) and len(results) > 1:
+            dedup_map = {}
+            for item in results:
+                if not isinstance(item, dict):
+                    continue
+                key = (item.get("label","") or "").lower().strip()
+                if not key:
+                    continue
+                existing = dedup_map.get(key)
+                if existing is None or item.get("confidence", 0) > existing.get("confidence", 0):
+                    dedup_map[key] = item
+            # preserve original order of appearance
+            seen = set()
+            deduped = []
+            for r in results:
+                if not isinstance(r, dict):
+                    continue
+                k = (r.get("label","") or "").lower().strip()
+                if k and k not in seen and k in dedup_map:
+                    deduped.append(dedup_map[k])
+                    seen.add(k)
+            if deduped:
+                results = deduped
+    except Exception:
+        # if anything goes wrong, preserve original results
+        pass
+
     return results
 
 # --- CLI ---
