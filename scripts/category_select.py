@@ -93,6 +93,24 @@ def deterministic_topics_from_texts(
     vectorizer = TfidfVectorizer(max_df=max_df, min_df=min_df, ngram_range=(1,2), max_features=max_features)
     try:
         X = vectorizer.fit_transform(clean_texts)
+    # seed-boost: amplify TF-IDF rows for docs matching query tokens (without injecting query as doc)
+    try:
+        if user_query_or_seed_keywords and not inject_query_doc:
+            qtokens = set(t.lower() for t in re.findall(r"\w+", user_query_or_seed_keywords))
+            if qtokens:
+                # find docs that match any token and scale their vectors
+                boost_factor = 3.0
+                from scipy.sparse import csr_matrix
+                rows_to_boost = []
+                for i, txt in enumerate(clean_texts):
+                    if any(q in txt.lower() for q in qtokens):
+                        rows_to_boost.append(i)
+                if rows_to_boost:
+                    X = X.tocsr()
+                    for r in rows_to_boost:
+                        X.data[X.indptr[r]:X.indptr[r+1]] *= boost_factor
+    except Exception:
+        pass
     except Exception as e:
         # Fallback: build trivial topics from each document's top tokens
         logger.warning("TF-IDF failed (%s). Falling back to simple token heuristic.", e)
@@ -148,7 +166,9 @@ def deterministic_topics_from_texts(
 
     # Use MiniBatchKMeans for larger n_docs, otherwise KMeans
     try:
-        if Xmat.shape[0] > 300:
+        # clamp k to reasonable values based on number of docs
+    k = min(k, max(1, int(max(2, round(len(clean_texts)**0.5)))))
+    if Xmat.shape[0] > 300:
             from sklearn.cluster import MiniBatchKMeans as MBK
             km = MBK(n_clusters=k, random_state=42)
         else:
