@@ -182,7 +182,7 @@ def deterministic_topics_from_texts(
         seen = set()
         for term in top_terms:
             # split term into simple tokens (keep alphanum)
-            for tok in __import__('re').findall(r\"\\w+\", term.lower()):
+            for tok in __import__('re').findall(r"\w+", term.lower()):
                 if tok in seen:
                     continue
                 if tok in stopset:
@@ -193,12 +193,12 @@ def deterministic_topics_from_texts(
                 seen.add(tok)
         # prefer cleaned tokens otherwise fall back to ngram join
         if cleaned_tokens:
-            label = \" \".join(cleaned_tokens[:3])
+            label = " ".join(cleaned_tokens[:3])
         else:
-            label = \" \".join(top_terms[:3]) if top_terms else f\"topic-{i}\"
+            label = " ".join(top_terms[:3]) if top_terms else f"topic-{i}"
         # canonical id: human-friendly slug + stable short hash
         canonical = stable_id(label, 'deterministic')
-        description = f\"Cluster {i} — top terms: {', '.join(cleaned_tokens[:6] or top_terms[:6])}\"
+        description = f"Cluster {i} — top terms: {', '.join(cleaned_tokens[:6] or top_terms[:6])}"
         # representative docs for this cluster
         doc_idxs = [j for j, lbl in enumerate(labels) if lbl == i]
         examples = [str(idx) for idx in (doc_idxs[:3] if doc_idxs else [0])]
