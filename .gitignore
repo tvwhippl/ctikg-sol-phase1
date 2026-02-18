@@ -38,3 +38,8 @@ configs/categories/_generated/*.yml
 *.bak*
 *.patch
 chunks/*.jsonl
+
+# scratch / generated artifacts
+*.bak*
+*.patch
+chunks/*.jsonl
