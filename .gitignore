@@ -33,3 +33,8 @@ __pycache__/
 # open-topic generated categories
 configs/categories/_generated/*.yaml
 configs/categories/_generated/*.yml
+
+# generated / scratch
+*.bak*
+*.patch
+chunks/*.jsonl
