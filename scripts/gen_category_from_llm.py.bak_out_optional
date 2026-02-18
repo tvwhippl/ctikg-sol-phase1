@@ -488,7 +488,7 @@ def main() -> None:
     ap.add_argument("--topic", required=True, help="Topic prompt (e.g., 'Remote Code Execution')")
     ap.add_argument("--provider", default=os.getenv("LLM_PROVIDER", "ollama"), help="ollama | openai | openrouter | dry-run")
     ap.add_argument("--model", default=os.getenv("LLM_MODEL", ""), help="Model name for the provider")
-    ap.add_argument("--out", default=None, help="Output YAML path (default: configs/categories/_generated/<TOPIC>.yaml)")
+    ap.add_argument("--out", required=True, help="Output YAML path")
     ap.add_argument("--winners", type=int, default=100, help="How many winners to select downstream")
     ap.add_argument("--max-tokens", type=int, default=800, help="Max tokens for the LLM response")
     ap.add_argument("--max-queries", type=int, default=1, help="Retries for malformed output")
@@ -509,15 +509,7 @@ def main() -> None:
 
     cfg = client.call_llm_for_topic_config(topic=args.topic, winners=args.winners, max_tokens=args.max_tokens, max_queries=args.max_queries)
 
-    if args.out:
-
-        out_path = Path(args.out)
-
-    else:
-
-        safe = re.sub(r"[^A-Za-z0-9]+", "_", str(args.topic)).strip("_") or "topic"
-
-        out_path = Path("configs/categories/_generated") / f"{safe}.yaml"
+    out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     out_text = yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True)

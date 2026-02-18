@@ -15,12 +15,12 @@ A malware family harvested saved credentials and exfiltrated them to a C2 server
 DOC
 
 echo "=== Deterministic run ==="
-$PY scripts/category_select.py --mode deterministic --query "remote code execution" --seed "$TMPDIR/doc1.txt" "$TMPDIR/doc2.txt" --k 6
+$PY scripts/topic_candidate_select.py --mode deterministic --query "remote code execution" --seed "$TMPDIR/doc1.txt" "$TMPDIR/doc2.txt" --k 6
 
 echo "=== LLM dry-run (simulated) ==="
-$PY scripts/category_select.py --mode llm --query "remote code execution" --dry-run --k 6
+$PY scripts/topic_candidate_select.py --mode llm --query "remote code execution" --dry-run --k 6
 
 echo "=== Hybrid (deterministic -> LLM refine, simulated) ==="
-$PY scripts/category_select.py --mode hybrid --query "remote code execution" --seed "$TMPDIR/doc1.txt" "$TMPDIR/doc2.txt" --dry-run --k 6
+$PY scripts/topic_candidate_select.py --mode hybrid --query "remote code execution" --seed "$TMPDIR/doc1.txt" "$TMPDIR/doc2.txt" --dry-run --k 6
 
 echo "Smoke run complete."

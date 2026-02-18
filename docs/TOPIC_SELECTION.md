@@ -3,11 +3,11 @@
 Purpose: produce candidate categories for CTI ingestion (label, canonical_id, description, examples, confidence).
 
 Files:
- - scripts/category_select.py (CLI + API: select_topics())
+ - scripts/topic_candidate_select.py (CLI + API: select_topics())
  - scripts/gen_category_from_llm.py (LLM wrapper)
 
 Usage examples (local):
-  python3 scripts/category_select.py --mode deterministic --query "remote code execution" --seed docs/article1.txt docs/article2.txt --k 12 --out /tmp/categories.json
+  python3 scripts/topic_candidate_select.py --mode deterministic --query "remote code execution" --seed docs/article1.txt docs/article2.txt --k 12 --out /tmp/categories.json
 
 LLM usage (SOL / Docker):
  - Set one of:

@@ -1,7 +1,7 @@
 import json
 import os
 import tempfile
-from scripts.category_select import select_topics
+from scripts.topic_candidate_select import select_topics
 from scripts import gen_category_from_llm as llm_mod
 
 def test_deterministic_consistent_output(tmp_path):
@@ -36,7 +36,7 @@ def test_hybrid_merges_duplicates(monkeypatch):
                 {"label":"Remote Code Execution", "canonical_id":"rce-xxxx", "short_description":"desc", "confidence_score":0.9, "examples":["doc1"]},
                 {"label":"Credential Theft", "canonical_id":"cred-xxxx", "short_description":"desc", "confidence_score":0.8, "examples":["doc2"]}
             ]
-    monkeypatch.setattr("scripts.category_select.LLMClient", lambda dry_run=False: StubClient(dry_run=dry_run))
+    monkeypatch.setattr("scripts.topic_candidate_select.LLMClient", lambda dry_run=False: StubClient(dry_run=dry_run))
     docs = []
     res = select_topics("rce credential", seed_article_paths_or_ids=docs, runtime_mode="hybrid", dry_run=False)
     labels = [r["label"].lower() for r in res]

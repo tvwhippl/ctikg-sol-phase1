@@ -1,397 +1,258 @@
 #!/usr/bin/env python3
-"""
-scripts/category_select.py
+"""scripts/category_select.py
 
-Replacement that implements:
- - select_topics(user_query_or_seed_keywords, seed_article_ids_or_files, runtime_mode)
- - CLI preserving old interface: --mode, --out, etc.
+Legacy/open-topic **winner selection** script.
 
-Outputs JSON lines or JSON array to stdout/file.
+This file is intentionally kept compatible with the open_topic.mk interface:
 
-Requirements (runtime):
- - python3.9+
- - numpy, scikit-learn, nltk (optional), sentence_transformers (optional)
- - requests (for OpenRouter/Ollama), openai (optional)
+  python3 scripts/category_select.py --in data/Links_Queue_sorted_flags.csv --category <yaml>
+
+It reads:
+  - a link queue CSV (from pre_rank_links_v3 + make_helper_flags)
+  - a category YAML with schema documented in docs/TOPICS.md:
+        name: <string>
+        include: ["kw1", "kw2", ...]
+        exclude: ["kwA", ...]
+        winners: <int>
+
+It writes:
+  data/Selected_<SAFE_NAME>.csv
+
+Where SAFE_NAME matches the Makefile logic:
+  re.sub(r'[^A-Za-z0-9]+','_', name).strip('_')
+
+Note:
+- This is *not* the topic-candidate generation script. That lives in
+  scripts/topic_candidate_select.py.
 """
 
 from __future__ import annotations
+
 import argparse
-import hashlib
-import json
 import logging
 import os
 import re
-import sys
-from typing import List, Dict, Any, Optional, Tuple
 from pathlib import Path
+from typing import Any, Dict, List, Tuple
 
-# Local helper (LLM wrapper)
-try:
-    from scripts.gen_category_from_llm import LLMClient, canned_llm_response_for_dry_run
-except Exception:
-    from gen_category_from_llm import LLMClient, canned_llm_response_for_dry_run
+import pandas as pd
+import yaml
 
-# --- Logging ---
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("category_select")
 
-# --- Utilities ---
-def slugify(text: str) -> str:
-    text = text.lower()
-    text = re.sub(r"[^a-z0-9]+", "-", text).strip("-")
-    return text[:40] or "cat"
 
-def stable_id(label: str, mode: str) -> str:
-    # deterministic canonical id: slug + short stable hash of (label + mode)
-    s = f"{label}||{mode}"
-    h = hashlib.sha1(s.encode("utf-8")).hexdigest()[:8]
-    return f"{slugify(label)}-{h}"
-
-def sanitize_text(s: str) -> str:
-    if s is None:
-        return ""
-    return s.encode("utf-8", errors="replace").decode("utf-8", errors="replace")
-
-# --- Deterministic pipeline (TF-IDF + KMeans) ---
+def _safe_name(name: str) -> str:
+    return re.sub(r"[^A-Za-z0-9]+", "_", name or "").strip("_") or "Category"
 
 
-def deterministic_topics_from_texts(
-    texts: List[str],
-    k: int = 12,
-    seed_boost_indexes: Optional[List[int]] = None,
-) -> List[Dict[str, Any]]:
+def _normalize_cols(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalize common column names.
+
+    Important: the link queue sometimes contains both lowercase and uppercase
+    variants (e.g., `url` and `URL`). This helper will **prefer** the canonical
+    column if it already exists, and will only rename/fill/drop variants in a
+    way that avoids creating duplicate column labels.
     """
-    Deterministic TF-IDF + KMeans topic generator.
 
-    Safe for tiny corpora. Seed boosting repeats matching document vectors
-    to bias KMeans without injecting the user query as a document.
-    """
-    import numpy as np
-    from sklearn.feature_extraction.text import TfidfVectorizer
-    from sklearn.cluster import KMeans, MiniBatchKMeans
-    from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
+    df = df.copy()
 
-    # normalize and filter input texts
-    clean_texts = [re.sub(r"\s+", " ", (t or "").strip()) for t in texts]
-    clean_texts = [t for t in clean_texts if t]
-    n_docs = len(clean_texts)
-    if n_docs == 0:
-        return []
+    def merge_variant(canonical: str, variants: List[str]) -> None:
+        nonlocal df
+        existing = [c for c in [canonical] + variants if c in df.columns]
+        if not existing:
+            return
 
-    # adaptive TF-IDF params for small corpora
-    if n_docs == 1:
-        min_df = 1
-        max_df = 1.0
-        max_features = 500
-    elif n_docs == 2:
-        min_df = 1
-        max_df = 1.0
-        max_features = 1000
-    else:
-        min_df = max(1, int(0.01 * n_docs))
-        max_df = 0.9
-        max_features = min(5000, max(1000, n_docs * 50))
+        if canonical not in df.columns:
+            # Rename first available variant to canonical
+            for v in variants:
+                if v in df.columns:
+                    df = df.rename(columns={v: canonical})
+                    break
 
-    vectorizer = TfidfVectorizer(min_df=min_df, max_df=max_df, ngram_range=(1,2),
-                                 max_features=max_features, stop_words='english')
+        # If canonical exists and variants exist, fill missing values then drop variants
+        for v in variants:
+            if v in df.columns and v != canonical:
+                try:
+                    df[canonical] = df[canonical].where(df[canonical].notna(), df[v])
+                except Exception:
+                    pass
+                # Drop the variant to avoid duplicate labels later
+                df = df.drop(columns=[v])
 
-    try:
-        X = vectorizer.fit_transform(clean_texts)
-    except Exception as e:
-        # TF-IDF failed: fallback to token heuristic
-        logger.warning("TF-IDF fit_transform failed (%s). Falling back.", e)
-        results = []
-        for idx, doc in enumerate(clean_texts):
-            tokens = [t for t in re.findall(r'\w+', doc.lower()) if len(t) > 3 and t not in ENGLISH_STOP_WORDS]
-            top_terms = tokens[:3] or [doc[:20]]
-            label = " ".join(top_terms)
-            canonical = stable_id(label, "deterministic")
-            results.append({
-                "label": sanitize_text(label),
-                "canonical_id": sanitize_text(canonical),
-                "description": f"Fallback topic from document {idx}",
-                "examples": [str(idx)],
-                "confidence": 0.5,
-                "generation_mode": "deterministic",
-            })
-        return results
+    # Canonical merges
+    merge_variant("URL", ["url", "Url", "link", "Link"])
+    merge_variant("Title", ["title", "headline", "Headline"])
+    merge_variant("Snippet", ["snippet", "summary", "description", "Summary", "Description"])
+    merge_variant("Source_Domain", ["source_domain", "domain", "Domain", "SourceDomain"])
+    merge_variant("Score", ["score", "Score"])
+    merge_variant("Quality4", ["quality4", "Quality4"])
+    merge_variant("Quality2", ["quality2", "Quality2"])
+    merge_variant("RepFlag", ["repflag", "Repflag", "RepFlag"])
+    merge_variant("SigFlag", ["sigflag", "Sigflag", "SigFlag"])
+    merge_variant("Status", ["status", "Status"])
 
-    # if no features, fallback
-    if X.shape[1] == 0:
-        logger.warning("TF-IDF produced zero features; using fallback.")
-        results = []
-        for idx, doc in enumerate(clean_texts):
-            tokens = [t for t in re.findall(r'\w+', doc.lower()) if len(t) > 3 and t not in ENGLISH_STOP_WORDS]
-            top_terms = tokens[:3] or [doc[:20]]
-            label = " ".join(top_terms)
-            canonical = stable_id(label, "deterministic")
-            results.append({
-                "label": sanitize_text(label),
-                "canonical_id": sanitize_text(canonical),
-                "description": f"Fallback topic from document {idx}",
-                "examples": [str(idx)],
-                "confidence": 0.5,
-                "generation_mode": "deterministic",
-            })
-        return results
+    return df
 
-    # Seed-boost: repeat matching document rows to bias clustering (safe, no nested try)
-    Xmat = X.toarray()
-    if seed_boost_indexes:
-        add_rows = []
-        for idx in seed_boost_indexes:
-            if 0 <= idx < X.shape[0]:
-                # append the raw dense vector a couple of times to bias KMeans
-                add_rows.append(X[idx].toarray().ravel())
-                add_rows.append(X[idx].toarray().ravel())
-        if add_rows:
-            Xmat = np.vstack([Xmat] + add_rows)
 
-    # clamp k
-    k = max(1, min(k, Xmat.shape[0]))
-    # reasonable upper bound based on n_docs
-    k = min(k, max(1, int(max(2, round(n_docs**0.5)))))
 
-    # choose KMeans variant
-    try:
-        if Xmat.shape[0] > 300:
-            km = MiniBatchKMeans(n_clusters=k, random_state=42)
-        else:
-            km = KMeans(n_clusters=k, random_state=42, n_init=10)
-        km.fit(Xmat)
-        centers = km.cluster_centers_
-    except Exception as e:
-        logger.warning("KMeans failed (%s); using single-cluster fallback.", e)
-        centers = [Xmat.mean(axis=0)]
+def _coerce_numeric(df: pd.DataFrame, cols: List[str]) -> pd.DataFrame:
+    for c in cols:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
+    return df
 
-    terms = vectorizer.get_feature_names_out()
-    from numpy import argsort
-    results = []
 
-    # if km has predict, get labels for original docs
-    try:
-        labels = km.predict(X.toarray()) if hasattr(km, "predict") else [0]*n_docs
-    except Exception:
-        labels = [0]*n_docs
+def _count_hits(text: str, terms: List[str]) -> int:
+    if not text or not terms:
+        return 0
+    t = text.lower()
+    hits = 0
+    for term in terms:
+        term = (term or "").strip().lower()
+        if not term:
+            continue
+        # simple substring match; robust and cheap
+        if term in t:
+            hits += 1
+    return hits
 
-    for i, center in enumerate(centers):
-        top_idx = list(argsort(center)[-6:][::-1])
-        top_terms = [terms[t] for t in top_idx if t < len(terms)]
-        # token-clean: split ngrams to tokens and dedupe
+
+def _select_winners(
+    df: pd.DataFrame,
+    name: str,
+    include: List[str],
+    exclude: List[str],
+    winners: int,
+) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    """Return (selected_df, stats). Never returns empty if df is non-empty."""
+
+    df = df.copy()
+
+    # Basic filtering: ignore explicit rejects if Status exists
+    if "Status" in df.columns:
+        df = df[df["Status"].fillna("").str.lower() != "rejected"].copy()
+
+    if df.empty:
+        return df, {"selected": 0, "reason": "input_empty_after_filter"}
+
+    # Build search text
+    title = df["Title"] if "Title" in df.columns else ""
+    snippet = df["Snippet"] if "Snippet" in df.columns else ""
+    df["__text"] = (title.fillna("").astype(str) + "\n" + snippet.fillna("").astype(str)).str.lower()
+
+    include = [t for t in (include or []) if str(t).strip()]
+    exclude = [t for t in (exclude or []) if str(t).strip()]
+
+    df["__inc_hits"] = df["__text"].apply(lambda s: _count_hits(s, include))
+    df["__exc_hits"] = df["__text"].apply(lambda s: _count_hits(s, exclude))
+
+    # Topic score: include hits minus a heavier penalty for exclude hits
+    df["__topic_score"] = df["__inc_hits"] - (2 * df["__exc_hits"])
+
+    # Candidate filter
+    used_fallback = False
+    cand = df
+    if include:
+        cand = df[df["__inc_hits"] > 0].copy()
+        if cand.empty:
+            # fallback: if include list is too strict, take the best overall by quality
+            used_fallback = True
+            cand = df.copy()
+
+    # numeric coercion for sort keys
+    cand = _coerce_numeric(cand, ["Quality4", "Quality2", "RepFlag", "SigFlag", "Score"])
+
+    # sort keys (topic_score first)
+    sort_cols = ["__topic_score", "Quality4", "Quality2", "RepFlag", "SigFlag", "Score"]
+    sort_cols = [c for c in sort_cols if c in cand.columns]
+    ascending = [False] * len(sort_cols)
+
+    cand = cand.sort_values(sort_cols, ascending=ascending, kind="mergesort")
+
+    # de-dupe by URL if present
+    url_col = "URL" if "URL" in cand.columns else None
+    if url_col:
+        cand = cand.drop_duplicates(subset=[url_col], keep="first")
+
+    selected = cand.head(max(0, int(winners))).copy()
+
+    stats = {
+        "category": name,
+        "winners_requested": int(winners),
+        "selected": int(len(selected)),
+        "had_include_terms": bool(include),
+        "fallback_used": used_fallback,
+        "total_candidates": int(len(cand)),
+    }
+    return selected, stats
+
+
+def run(in_path: str, category_yaml_path: str, out_path: str | None = None) -> str:
+    """Run selection and return output CSV path."""
+    cat = yaml.safe_load(Path(category_yaml_path).read_text(encoding="utf-8"))
+    if not isinstance(cat, dict):
+        raise ValueError(f"Category YAML must be a mapping/object: {category_yaml_path}")
+
+    name = str(cat.get("name") or "").strip() or "Category"
+    include = cat.get("include") or []
+    exclude = cat.get("exclude") or []
+
+    winners_int = 100
+    if "winners" in cat:
         try:
-            stopset = set(ENGLISH_STOP_WORDS)
+            winners_int = int(cat.get("winners"))
         except Exception:
-            stopset = set()
-        cleaned_tokens = []
-        seen = set()
-        for term in top_terms:
-            for tok in re.findall(r'\w+', term.lower()):
-                if tok in seen or tok in stopset or len(tok) < 3:
-                    continue
-                cleaned_tokens.append(tok)
-                seen.add(tok)
-        label = " ".join(cleaned_tokens[:3]) if cleaned_tokens else (" ".join(top_terms[:3]) if top_terms else f"topic-{i}")
-        canonical = stable_id(label, "deterministic")
-        description = f"Cluster {i} — top terms: {', '.join(cleaned_tokens[:6] or top_terms[:6])}"
-        doc_idxs = [j for j, lbl in enumerate(labels) if lbl == i]
-        examples = [str(idx) for idx in (doc_idxs[:3] if doc_idxs else [0])]
-        results.append({
-            "label": sanitize_text(label),
-            "canonical_id": sanitize_text(canonical),
-            "description": sanitize_text(description),
-            "examples": examples,
-            "confidence": 0.6,
-            "generation_mode": "deterministic",
+            winners_int = 100
+
+    # load CSV
+    df = pd.read_csv(in_path)
+    df = _normalize_cols(df)
+
+    selected, stats = _select_winners(df, name=name, include=list(include), exclude=list(exclude), winners=winners_int)
+
+    safe = _safe_name(name)
+    if out_path is None:
+        out_dir = str(Path(in_path).parent)
+        out_path = str(Path(out_dir) / f"Selected_{safe}.csv")
+
+    # Build output frame expected by scrape_selected.py
+    if selected.empty:
+        out_df = pd.DataFrame(columns=["URL", "Title", "Source_Domain", "Category", "Score"])
+    else:
+        out_df = pd.DataFrame({
+            "URL": selected["URL"] if "URL" in selected.columns else "",
+            "Title": selected["Title"] if "Title" in selected.columns else "",
+            "Source_Domain": selected["Source_Domain"] if "Source_Domain" in selected.columns else "",
+            "Category": name,
+            "Score": selected["Score"] if "Score" in selected.columns else "",
         })
-    return results
 
-def hybrid_topics(texts: List[str], llm_client: LLMClient, m: int = 20, **llm_kwargs) -> List[Dict[str, Any]]:
-    # produce M deterministic candidates then refine with LLM
-    det = deterministic_topics_from_texts(texts, k=min(24, max(4, m)))
-    candidates = [d["label"] for d in det]
-    # prepare LLM prompt: ask to refine these candidates, merge near-duplicates, rank, and add short desc
-    prompt = {
-        "instruction": (
-            "You are given candidate topic labels (from a classical NLP run). "
-            "Do NOT invent unconstrained categories. Refine, merge near-duplicates, "
-            "rank them by importance to the user's query, remove obvious duplicates, "
-            "and return up to 12 categories. Output JSON array with fields: "
-            "[label, description, example_excerpt (optional), confidence]. Return JSON only."
-        ),
-        "candidates": candidates
-    }
-    response = llm_client.call_llm_for_categories(prompt=prompt, **llm_kwargs)
-    # validation + stable ids
-    out = []
-    for item in response:
-        label = sanitize_text(item.get("label","")).strip()
-        if not label:
-            continue
-        out.append({
-            "label": label,
-            "canonical_id": stable_id(label, "hybrid"),
-            "description": sanitize_text(item.get("description","")),
-            "examples": item.get("examples", []) or [],
-            "confidence": float(item.get("confidence", 0.6)),
-            "generation_mode": "hybrid",
-        })
-    return out
+    out_df.to_csv(out_path, index=False)
 
-# --- LLM mode ---
-def llm_topics(user_query: str, llm_client: LLMClient, n: int = 12, max_tokens: int = 1024, max_queries: int = 1, **kwargs) -> List[Dict[str, Any]]:
-    # Build concise prompt asking for JSON only
-    prompt = {
-        "instruction": (
-            "Given the user seed or query, produce up to %(n)s candidate categories.\n"
-            "For each candidate produce: label, canonical_id (do not invent random ids), "
-            "short_description (1-2 sentences), example_article_excerpt (one short excerpt or doc id), "
-            "confidence_score (0-1 float).\n"
-            "Return JSON array only. No prose. Use ASCII/UTF-8 safe text." % {"n": n}
-        ),
-        "user_query": user_query
-    }
-    # Respect limits inside LLM client
-    response = llm_client.call_llm_for_categories(prompt=prompt, n=n, max_tokens=max_tokens, max_queries=max_queries, **kwargs)
-    # validate and sanitize
-    out = []
-    for entry in response:
-        label = sanitize_text(entry.get("label","")).strip()
-        if not label:
-            continue
-        canonical = entry.get("canonical_id") or stable_id(label, "llm")
-        canonical = sanitize_text(canonical)
-        out.append({
-            "label": label,
-            "canonical_id": canonical,
-            "description": sanitize_text(entry.get("short_description","")),
-            "examples": entry.get("examples", []) or [entry.get("example_article_excerpt","")] if entry.get("example_article_excerpt") else [],
-            "confidence": float(entry.get("confidence_score", entry.get("confidence", 0.5))),
-            "generation_mode": "llm",
-        })
-    return out
-
-# --- Top-level API ---
-def select_topics(
-    user_query_or_seed_keywords: str,
-    seed_article_paths_or_ids: Optional[List[str]] = None,
-    runtime_mode: str = "hybrid",
-    out_path: Optional[str] = None,
-    dry_run: bool = False,
-    k_det: int = 12,
-    m_hybrid: int = 20,
-    max_llm_tokens: int = 1024,
-    max_llm_queries: int = 1,
-    fallback_to_deterministic: bool = True,
-) -> List[Dict[str, Any]]:
-    """
-    Primary function.
-    """
-    # Load texts from seed_article_paths_or_ids (if any)
-    texts = []
-    seed_indexes = []
-    if seed_article_paths_or_ids:
-        for idx, p in enumerate(seed_article_paths_or_ids):
-            try:
-                if os.path.exists(p):
-                    texts.append(Path(p).read_text(encoding="utf-8"))
-                    seed_indexes.append(len(texts)-1)
-                else:
-                    # treat as doc id placeholder
-                    texts.append(str(p))
-            except Exception as e:
-                logger.warning("Couldn't read %s: %s", p, e)
-    # always include the user query as a short "document" to help deterministic methods
-    if user_query_or_seed_keywords:
-        texts = [user_query_or_seed_keywords] + texts
-
-    llm_client = LLMClient(dry_run=dry_run)
-
-    try:
-        if runtime_mode == "deterministic":
-            results = deterministic_topics_from_texts(texts, k=k_det, seed_boost_indexes=seed_indexes)
-        elif runtime_mode == "llm":
-            results = llm_topics(user_query_or_seed_keywords, llm_client, n=k_det, max_tokens=max_llm_tokens, max_queries=max_llm_queries)
-        elif runtime_mode == "hybrid":
-            results = hybrid_topics(texts, llm_client, m=m_hybrid, max_tokens=max_llm_tokens, max_queries=max_llm_queries)
-        else:
-            raise ValueError("unknown mode")
-    except Exception as e:
-        logger.exception("Error during topic generation: %s", e)
-        if fallback_to_deterministic:
-            logger.warning("Falling back to deterministic mode")
-            results = deterministic_topics_from_texts(texts, k=k_det, seed_boost_indexes=seed_indexes)
-        else:
-            raise
-
-    # canonical_id enforcement: ensure deterministic canonical ids
-    for r in results:
-        if "canonical_id" not in r or not r["canonical_id"]:
-            r["canonical_id"] = stable_id(r["label"], r.get("generation_mode", runtime_mode))
-
-    # Write output
-    if out_path:
-        outp = Path(out_path)
-        outp.write_text(json.dumps(results, indent=2), encoding="utf-8")
-        logger.info("Wrote %d categories to %s", len(results), out_path)
-    # --- conservative dedupe: collapse identical labels if more than one result exists
-    try:
-        if isinstance(results, list) and len(results) > 1:
-            dedup_map = {}
-            for item in results:
-                if not isinstance(item, dict):
-                    continue
-                key = (item.get("label","") or "").lower().strip()
-                if not key:
-                    continue
-                existing = dedup_map.get(key)
-                if existing is None or item.get("confidence", 0) > existing.get("confidence", 0):
-                    dedup_map[key] = item
-            # preserve original order of appearance
-            seen = set()
-            deduped = []
-            for r in results:
-                if not isinstance(r, dict):
-                    continue
-                k = (r.get("label","") or "").lower().strip()
-                if k and k not in seen and k in dedup_map:
-                    deduped.append(dedup_map[k])
-                    seen.add(k)
-            if deduped:
-                results = deduped
-    except Exception:
-        # if anything goes wrong, preserve original results
-        pass
-
-    return results
-
-# --- CLI ---
-def main(argv=None):
-    p = argparse.ArgumentParser(prog="category_select.py")
-    p.add_argument("--mode", choices=["llm", "hybrid", "deterministic"], default="hybrid")
-    p.add_argument("--query", required=False, default="")
-    p.add_argument("--seed", nargs="*", default=[])
-    p.add_argument("--k", type=int, default=12, help="k for deterministic or max categories for LLM")
-    p.add_argument("--out", required=False, default=None)
-    p.add_argument("--dry-run", action="store_true", help="simulate LLM calls")
-    p.add_argument("--max-llm-tokens", type=int, default=1024)
-    p.add_argument("--max-llm-queries", type=int, default=1)
-    p.add_argument("--fallback-to-deterministic", action="store_true", default=True)
-    args = p.parse_args(argv)
-
-    res = select_topics(
-        user_query_or_seed_keywords=args.query,
-        seed_article_paths_or_ids=args.seed,
-        runtime_mode=args.mode,
-        out_path=args.out,
-        dry_run=args.dry_run,
-        k_det=args.k,
-        m_hybrid=args.k,
-        max_llm_tokens=args.max_llm_tokens,
-        max_llm_queries=args.max_llm_queries,
-        fallback_to_deterministic=args.fallback_to_deterministic,
+    logger.info(
+        "Selected %s/%s winners for '%s' (fallback_used=%s) -> %s",
+        stats.get("selected"),
+        stats.get("winners_requested"),
+        name,
+        stats.get("fallback_used"),
+        out_path,
     )
-    # print to stdout as JSON array
-    print(json.dumps(res, indent=2))
+
+    return out_path
+
+
+
+def main() -> None:
+
+    ap = argparse.ArgumentParser(description="Select winners for a generated category YAML")
+    ap.add_argument("--in", dest="in_path", required=True, help="Input queue CSV (e.g., data/Links_Queue_sorted_flags.csv)")
+    ap.add_argument("--category", required=True, help="Category YAML path (name/include/exclude/winners)")
+    ap.add_argument("--out", default=None, help="Optional explicit output CSV path")
+    args = ap.parse_args()
+
+    run(args.in_path, args.category, out_path=args.out)
+
 
 if __name__ == "__main__":
     main()

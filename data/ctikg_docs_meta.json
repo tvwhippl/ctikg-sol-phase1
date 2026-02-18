@@ -1,9 +1,13 @@
 {
-  "docs": 3,
-  "rows": 48,
+  "docs": 10,
+  "rows": 452,
   "sources": {
-    "ubuntu.com": 1,
+    "jfrog.com": 1,
+    "www.theregister.com": 1,
+    "unit42.paloaltonetworks.com": 2,
+    "ubuntu.com": 3,
+    "www.crowdstrike.com": 1,
     "www.bleepingcomputer.com": 1,
-    "www.theregister.com": 1
+    "www.bankinfosecurity.com": 1
   }
 }

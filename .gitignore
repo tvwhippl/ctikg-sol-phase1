@@ -29,3 +29,7 @@ scraper_cache.sqlite
 .vscode/
 __pycache__/
 *.pyc
+
+# open-topic generated categories
+configs/categories/_generated/*.yaml
+configs/categories/_generated/*.yml
