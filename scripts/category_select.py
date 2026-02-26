@@ -117,86 +117,132 @@ def _count_hits(text: str, terms: List[str]) -> int:
             hits += 1
     return hits
 
+def _tfidf_query_sim(query: str, docs: List[str]) -> List[float]:
+    """
+    Return cosine-similarity-like scores (TF-IDF dot product with L2 norm)
+    between query and each doc. Robust fallback when include terms miss.
 
-def _select_winners(
-    df: pd.DataFrame,
-    name: str,
-    include: List[str],
-    exclude: List[str],
-    winners: int,
-) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-    """Return (selected_df, stats). Never returns empty if df is non-empty."""
+    Safe behavior: on any failure, return all-zeros.
+    """
+    try:
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        import numpy as np
 
-    df = df.copy()
+        query = (query or "").strip()
+        if not query or not docs:
+            return [0.0] * len(docs)
 
-    # Basic filtering: ignore explicit rejects if Status exists
-    if "Status" in df.columns:
-        df = df[df["Status"].fillna("").str.lower() != "rejected"].copy()
+        # Fit on [query + docs] so vocab covers both
+        vec = TfidfVectorizer(stop_words="english", ngram_range=(1, 2), max_features=8000)
+        X = vec.fit_transform([query] + docs)
+        q = X[0]
+        D = X[1:]
 
-    if df.empty:
-        return df, {"selected": 0, "reason": "input_empty_after_filter"}
+        # With default norm='l2', dot product approximates cosine similarity
+        sims = (D @ q.T).toarray().ravel()
+        sims = np.nan_to_num(sims, nan=0.0, posinf=0.0, neginf=0.0)
+        return [float(x) for x in sims]
+    except Exception:
+        return [0.0] * len(docs)
 
-    # Build search text
-    title = df["Title"] if "Title" in df.columns else ""
-    snippet = df["Snippet"] if "Snippet" in df.columns else ""
-    df["__text"] = (title.fillna("").astype(str) + "\n" + snippet.fillna("").astype(str)).str.lower()
+def _select_winners(df: pd.DataFrame, cat: Dict[str, Any], out_path: str) -> Tuple[pd.DataFrame, bool]:
+    name = str(cat.get("name") or "Topic").strip()
+    include = [str(x).strip() for x in (cat.get("include") or []) if str(x).strip()]
+    exclude = [str(x).strip() for x in (cat.get("exclude") or []) if str(x).strip()]
+    winners = int(cat.get("winners") or 100)
+    winners = max(1, winners)
 
-    include = [t for t in (include or []) if str(t).strip()]
-    exclude = [t for t in (exclude or []) if str(t).strip()]
+    df = _normalize_cols(df)
+    df["__text"] = (df["Title"].fillna("") + "\n" + df["Snippet"].fillna("")).astype(str).str.lower()
 
-    df["__inc_hits"] = df["__text"].apply(lambda s: _count_hits(s, include))
-    df["__exc_hits"] = df["__text"].apply(lambda s: _count_hits(s, exclude))
-
-    # Topic score: include hits minus a heavier penalty for exclude hits
+    # Primary scoring: include/exclude hits
+    df["__inc_hits"] = df["__text"].apply(lambda t: _count_hits(t, include))
+    df["__exc_hits"] = df["__text"].apply(lambda t: _count_hits(t, exclude)) if exclude else 0
     df["__topic_score"] = df["__inc_hits"] - (2 * df["__exc_hits"])
 
-    # Candidate filter
-    used_fallback = False
-    cand = df
-    if include:
-        cand = df[df["__inc_hits"] > 0].copy()
+    # Always have these columns, even if we don't compute them yet
+    df["__qsim"] = 0.0
+
+    # Candidate set: include hits > 0 and no exclude hits
+    cand = df[(df["__inc_hits"] > 0) & (df["__exc_hits"] == 0)].copy()
+    fallback_used = False
+
+    # If include is too strict or yields too few, compute TF-IDF similarity fallback
+    if cand.empty or len(cand) < winners:
+        query = " ".join([name] + include).strip()
+        df["__qsim"] = _tfidf_query_sim(query, df["__text"].tolist())
+
         if cand.empty:
-            # fallback: if include list is too strict, take the best overall by quality
-            used_fallback = True
-            cand = df.copy()
+            # fallback: topic similarity + exclude filter
+            fallback_used = True
+            cand = df[(df["__qsim"] > 0) & (df["__exc_hits"] == 0)].copy()
 
-    # numeric coercion for sort keys
-    cand = _coerce_numeric(cand, ["Quality4", "Quality2", "RepFlag", "SigFlag", "Score"])
+            # If similarity yields nothing, revert to old behavior but still exclude excluded hits
+            if cand.empty:
+                cand = df[df["__exc_hits"] == 0].copy()
 
-    # sort keys (topic_score first)
-    sort_cols = ["__topic_score", "Quality4", "Quality2", "RepFlag", "SigFlag", "Score"]
-    sort_cols = [c for c in sort_cols if c in cand.columns]
-    ascending = [False] * len(sort_cols)
+    # Ranking: topic score first, then similarity, then existing quality/score fields
+    sort_cols = ["__topic_score", "__qsim", "Quality4", "Quality2", "Score"]
+    # Ensure missing sort cols exist
+    for c in sort_cols:
+        if c not in cand.columns:
+            cand[c] = 0
 
-    cand = cand.sort_values(sort_cols, ascending=ascending, kind="mergesort")
+    cand.sort_values(
+        by=sort_cols,
+        ascending=[False, False, False, False, False],
+        inplace=True,
+        kind="mergesort",
+    )
 
-    # de-dupe by URL if present
-    url_col = "URL" if "URL" in cand.columns else None
-    if url_col:
-        cand = cand.drop_duplicates(subset=[url_col], keep="first")
+    # Dedupe by URL; take top winners
+    selected = cand.drop_duplicates(subset=["URL"]).head(winners).copy()
 
-    selected = cand.head(max(0, int(winners))).copy()
+    # If still short, fill from the remaining docs using similarity (but only if similarity > 0)
+    if len(selected) < winners and "__qsim" in df.columns:
+        need = winners - len(selected)
+        remaining = df[~df["URL"].isin(selected["URL"])].copy()
+        remaining = remaining[remaining["__exc_hits"] == 0]
+        remaining.sort_values(
+            by=["__qsim", "Quality4", "Quality2", "Score"],
+            ascending=[False, False, False, False],
+            inplace=True,
+            kind="mergesort",
+        )
+        fill = remaining[remaining["__qsim"] > 0].drop_duplicates(subset=["URL"]).head(need)
+        if len(fill) > 0:
+            fallback_used = True
+            selected = pd.concat([selected, fill], ignore_index=True)
 
-    stats = {
-        "category": name,
-        "winners_requested": int(winners),
-        "selected": int(len(selected)),
-        "had_include_terms": bool(include),
-        "fallback_used": used_fallback,
-        "total_candidates": int(len(cand)),
-    }
-    return selected, stats
+    # Output with debug columns so you can see WHY a row was selected
+    out_df = pd.DataFrame(
+        {
+            "URL": selected["URL"],
+            "Title": selected["Title"],
+            "Source_Domain": selected["Source_Domain"],
+            "Category": name,
+            "Score": selected.get("Score", 0),
+            "TopicScore": selected.get("__topic_score", 0),
+            "IncHits": selected.get("__inc_hits", 0),
+            "ExcHits": selected.get("__exc_hits", 0),
+            "QuerySim": selected.get("__qsim", 0.0),
+            "FallbackUsed": fallback_used,
+        }
+    )
+    out_df.to_csv(out_path, index=False)
+    return out_df, fallback_used
 
 
 def run(in_path: str, category_yaml_path: str, out_path: str | None = None) -> str:
-    """Run selection and return output CSV path."""
+    """Run selection and return output CSV path.
+
+    This is the entrypoint used by open_topic.mk (topic-select) and unit tests.
+    """
     cat = yaml.safe_load(Path(category_yaml_path).read_text(encoding="utf-8"))
     if not isinstance(cat, dict):
         raise ValueError(f"Category YAML must be a mapping/object: {category_yaml_path}")
 
     name = str(cat.get("name") or "").strip() or "Category"
-    include = cat.get("include") or []
-    exclude = cat.get("exclude") or []
 
     winners_int = 100
     if "winners" in cat:
@@ -205,42 +251,28 @@ def run(in_path: str, category_yaml_path: str, out_path: str | None = None) -> s
         except Exception:
             winners_int = 100
 
-    # load CSV
+    # output path default: alongside the queue CSV
+    safe = _safe_name(name)
+    if out_path is None:
+        out_dir = Path(in_path).parent
+        out_path = str(out_dir / f"Selected_{safe}.csv")
+
+    # load + normalize
     df = pd.read_csv(in_path)
     df = _normalize_cols(df)
 
-    selected, stats = _select_winners(df, name=name, include=list(include), exclude=list(exclude), winners=winners_int)
-
-    safe = _safe_name(name)
-    if out_path is None:
-        out_dir = str(Path(in_path).parent)
-        out_path = str(Path(out_dir) / f"Selected_{safe}.csv")
-
-    # Build output frame expected by scrape_selected.py
-    if selected.empty:
-        out_df = pd.DataFrame(columns=["URL", "Title", "Source_Domain", "Category", "Score"])
-    else:
-        out_df = pd.DataFrame({
-            "URL": selected["URL"] if "URL" in selected.columns else "",
-            "Title": selected["Title"] if "Title" in selected.columns else "",
-            "Source_Domain": selected["Source_Domain"] if "Source_Domain" in selected.columns else "",
-            "Category": name,
-            "Score": selected["Score"] if "Score" in selected.columns else "",
-        })
-
-    out_df.to_csv(out_path, index=False)
+    # select + write
+    out_df, fallback_used = _select_winners(df, cat=cat, out_path=out_path)
 
     logger.info(
         "Selected %s/%s winners for '%s' (fallback_used=%s) -> %s",
-        stats.get("selected"),
-        stats.get("winners_requested"),
+        len(out_df),
+        winners_int,
         name,
-        stats.get("fallback_used"),
+        fallback_used,
         out_path,
     )
-
     return out_path
-
 
 
 def main() -> None:

@@ -43,3 +43,15 @@ chunks/*.jsonl
 *.bak*
 *.patch
 chunks/*.jsonl
+
+# Open Topic generated outputs
+/results/scraped_corpus.jsonl
+/results/scrape_log.csv
+/exports/ctikg_input.csv
+/data/ctikg_docs_meta.json
+/chunks/*.jsonl
+/configs/categories/_generated/*.yaml
+/configs/categories/_generated/*.yml
+
+# local archives
+repo*.zip

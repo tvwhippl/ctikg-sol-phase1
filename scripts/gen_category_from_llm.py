@@ -282,7 +282,12 @@ class LLMClient:
                 obj = _extract_json(text)
                 if not isinstance(obj, dict):
                     raise ValueError("Expected JSON object for topic config")
-                return _validate_topic_config(obj, default_name=topic, default_winners=winners)
+                cfg = _validate_topic_config(obj, default_name=topic, default_winners=winners)
+                # Force stable naming: downstream make targets + Selected_*.csv should key off the user's topic,
+                # not whatever the LLM invents.
+                cfg["name"] = (topic or "").strip() or cfg.get("name") or "Topic"
+                return cfg
+
             except Exception as e:
                 last_err = e
                 logger.warning("LLM topic-config call failed attempt %s/%s: %s", attempt, max_queries, e)
