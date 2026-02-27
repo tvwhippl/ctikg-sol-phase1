@@ -1,57 +1,52 @@
-# runtime outputs
-logs/
-results/
-exports/
-outputs/
-data/*.csv
-data/*.json
-tmp/
+# ------------------------------
+# Python / tooling
+# ------------------------------
 __pycache__/
-.venv/
-.vscode/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
-logs/
-results/
-exports/
-data/*.csv
-# outputs and artifacts
-results/
-exports/
-outputs/
-artifacts/
-batch_topic.csv
-data/Links_Queue_sorted_flags.csv
-data/Links_Queue_master.csv
-scraper_cache.sqlite
-.snapshots/
+.venv/
+.env
+.env.*
+
 # OS / editor junk
 .DS_Store
 .vscode/
-__pycache__/
-*.pyc
 
-# open-topic generated categories
+# ------------------------------
+# Runtime outputs (generated)
+# ------------------------------
+logs/
+runs/
+results/
+exports/
+artifacts/
+outputs/
+tmp/
+scraper_cache.sqlite
+.snapshots/
+
+# ------------------------------
+# Generated intermediates
+# ------------------------------
+batch_topic.csv
+chunks/*.jsonl
+content/
+
+# Open-topic generated categories (LLM output)
 configs/categories/_generated/*.yaml
 configs/categories/_generated/*.yml
 
-# generated / scratch
-*.bak*
-*.patch
-chunks/*.jsonl
+# Data products (generated)
+data/*.csv
+data/*.json
+data/*.jsonl
 
-# scratch / generated artifacts
-*.bak*
-*.patch
-chunks/*.jsonl
+# Root-level triage packs (generated)
+Triage_*.csv
+Suggested_Selected_master.csv
 
-# Open Topic generated outputs
-/results/scraped_corpus.jsonl
-/results/scrape_log.csv
-/exports/ctikg_input.csv
-/data/ctikg_docs_meta.json
-/chunks/*.jsonl
-/configs/categories/_generated/*.yaml
-/configs/categories/_generated/*.yml
-
-# local archives
+# Local archives
 repo*.zip

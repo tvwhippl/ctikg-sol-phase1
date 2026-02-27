@@ -268,6 +268,7 @@ class LLMClient:
                 "Return ONLY a JSON object with keys: "
                 "name (string), include (array of strings), exclude (array of strings), winners (integer). "
                 "Rules: include should be 8-15 short keyword phrases; exclude should be 5-12 phrases; "
+                "Include both acronyms/abbreviations (e.g., RCE, SSRF, XSS) AND their expanded forms when applicable; "
                 "avoid overly generic words; keep phrases <= 4 words; no prose outside JSON."
             ),
             "user_query": topic,

@@ -112,9 +112,16 @@ def _count_hits(text: str, terms: List[str]) -> int:
         term = (term or "").strip().lower()
         if not term:
             continue
-        # simple substring match; robust and cheap
-        if term in t:
-            hits += 1
+        # Default: simple substring match.
+        #
+        # Special-case short alphanumeric tokens (e.g., "rce", "ssrf", "xss")
+        # to avoid false positives like "rce" matching the "...souRCE" suffix.
+        if term.isalnum() and len(term) <= 4:
+            if re.search(rf"\b{re.escape(term)}\b", t):
+                hits += 1
+        else:
+            if term in t:
+                hits += 1
     return hits
 
 def _tfidf_query_sim(query: str, docs: List[str]) -> List[float]:
@@ -145,7 +152,14 @@ def _tfidf_query_sim(query: str, docs: List[str]) -> List[float]:
     except Exception:
         return [0.0] * len(docs)
 
-def _select_winners(df: pd.DataFrame, cat: Dict[str, Any], out_path: str) -> Tuple[pd.DataFrame, bool]:
+def _select_winners(
+    df: pd.DataFrame,
+    cat: Dict[str, Any],
+    out_path: str,
+    *,
+    fill_to_winners: bool = False,
+    min_qsim: float = 0.0,
+) -> Tuple[pd.DataFrame, bool]:
     name = str(cat.get("name") or "Topic").strip()
     include = [str(x).strip() for x in (cat.get("include") or []) if str(x).strip()]
     exclude = [str(x).strip() for x in (cat.get("exclude") or []) if str(x).strip()]
@@ -163,23 +177,33 @@ def _select_winners(df: pd.DataFrame, cat: Dict[str, Any], out_path: str) -> Tup
     # Always have these columns, even if we don't compute them yet
     df["__qsim"] = 0.0
 
-    # Candidate set: include hits > 0 and no exclude hits
-    cand = df[(df["__inc_hits"] > 0) & (df["__exc_hits"] == 0)].copy()
+    # Strict candidate set: include hits > 0 and no exclude hits
+    #
+    # IMPORTANT behavioral choice (for scaling):
+    # - If we have *any* strict matches, we prefer to **underfill** rather than
+    #   pad to `winners` with weak semantic matches.
+    # - We only use semantic fallback to *rescue* the case where strict matches
+    #   are empty, or when `fill_to_winners=True`.
+    cand_strict = df[(df["__inc_hits"] > 0) & (df["__exc_hits"] == 0)].copy()
+    cand = cand_strict
     fallback_used = False
 
-    # If include is too strict or yields too few, compute TF-IDF similarity fallback
-    if cand.empty or len(cand) < winners:
+    # Compute TF-IDF similarity only when needed.
+    need_qsim = cand.empty or fill_to_winners
+    if need_qsim:
         query = " ".join([name] + include).strip()
         df["__qsim"] = _tfidf_query_sim(query, df["__text"].tolist())
 
-        if cand.empty:
-            # fallback: topic similarity + exclude filter
-            fallback_used = True
-            cand = df[(df["__qsim"] > 0) & (df["__exc_hits"] == 0)].copy()
+    # If strict match set is empty, fall back to TF-IDF similarity.
+    if cand.empty:
+        fallback_used = True
+        # Prefer rows that have *some* semantic match to the topic.
+        # `min_qsim` defaults to 0.0 (legacy behavior), but can be raised to reduce noise.
+        cand = df[(df["__qsim"] >= float(min_qsim)) & (df["__exc_hits"] == 0)].copy()
 
-            # If similarity yields nothing, revert to old behavior but still exclude excluded hits
-            if cand.empty:
-                cand = df[df["__exc_hits"] == 0].copy()
+        # If similarity yields nothing (e.g., all zeros), revert to exclude-only.
+        if cand.empty:
+            cand = df[df["__exc_hits"] == 0].copy()
 
     # Ranking: topic score first, then similarity, then existing quality/score fields
     sort_cols = ["__topic_score", "__qsim", "Quality4", "Quality2", "Score"]
@@ -198,21 +222,35 @@ def _select_winners(df: pd.DataFrame, cat: Dict[str, Any], out_path: str) -> Tup
     # Dedupe by URL; take top winners
     selected = cand.drop_duplicates(subset=["URL"]).head(winners).copy()
 
-    # If still short, fill from the remaining docs using similarity (but only if similarity > 0)
-    if len(selected) < winners and "__qsim" in df.columns:
+    # Optional: fill to `winners` using similarity-ranked remaining rows.
+    # Default is OFF to avoid low-precision padding during large batch runs.
+    if fill_to_winners and len(selected) < winners:
         need = winners - len(selected)
         remaining = df[~df["URL"].isin(selected["URL"])].copy()
         remaining = remaining[remaining["__exc_hits"] == 0]
+        # qsim already computed above when fill_to_winners=True
         remaining.sort_values(
             by=["__qsim", "Quality4", "Quality2", "Score"],
             ascending=[False, False, False, False],
             inplace=True,
             kind="mergesort",
         )
-        fill = remaining[remaining["__qsim"] > 0].drop_duplicates(subset=["URL"]).head(need)
+        fill = (
+            remaining[remaining["__qsim"] >= float(min_qsim)]
+            .drop_duplicates(subset=["URL"])
+            .head(need)
+        )
         if len(fill) > 0:
             fallback_used = True
+            # Mark these as fallback rows.
+            fill = fill.copy()
+            fill["__is_fallback_row"] = True
+            selected["__is_fallback_row"] = False
             selected = pd.concat([selected, fill], ignore_index=True)
+        else:
+            selected["__is_fallback_row"] = False
+    else:
+        selected["__is_fallback_row"] = False
 
     # Output with debug columns so you can see WHY a row was selected
     out_df = pd.DataFrame(
@@ -226,6 +264,7 @@ def _select_winners(df: pd.DataFrame, cat: Dict[str, Any], out_path: str) -> Tup
             "IncHits": selected.get("__inc_hits", 0),
             "ExcHits": selected.get("__exc_hits", 0),
             "QuerySim": selected.get("__qsim", 0.0),
+            "IsFallbackRow": selected.get("__is_fallback_row", False),
             "FallbackUsed": fallback_used,
         }
     )
@@ -233,7 +272,14 @@ def _select_winners(df: pd.DataFrame, cat: Dict[str, Any], out_path: str) -> Tup
     return out_df, fallback_used
 
 
-def run(in_path: str, category_yaml_path: str, out_path: str | None = None) -> str:
+def run(
+    in_path: str,
+    category_yaml_path: str,
+    out_path: str | None = None,
+    *,
+    fill_to_winners: bool = False,
+    min_qsim: float = 0.0,
+) -> str:
     """Run selection and return output CSV path.
 
     This is the entrypoint used by open_topic.mk (topic-select) and unit tests.
@@ -262,7 +308,13 @@ def run(in_path: str, category_yaml_path: str, out_path: str | None = None) -> s
     df = _normalize_cols(df)
 
     # select + write
-    out_df, fallback_used = _select_winners(df, cat=cat, out_path=out_path)
+    out_df, fallback_used = _select_winners(
+        df,
+        cat=cat,
+        out_path=out_path,
+        fill_to_winners=bool(fill_to_winners),
+        min_qsim=float(min_qsim),
+    )
 
     logger.info(
         "Selected %s/%s winners for '%s' (fallback_used=%s) -> %s",
@@ -281,9 +333,26 @@ def main() -> None:
     ap.add_argument("--in", dest="in_path", required=True, help="Input queue CSV (e.g., data/Links_Queue_sorted_flags.csv)")
     ap.add_argument("--category", required=True, help="Category YAML path (name/include/exclude/winners)")
     ap.add_argument("--out", default=None, help="Optional explicit output CSV path")
+    ap.add_argument(
+        "--fill-to-winners",
+        action="store_true",
+        help="If set, pad selection up to `winners` using semantic similarity (lower precision).",
+    )
+    ap.add_argument(
+        "--min-qsim",
+        type=float,
+        default=0.0,
+        help="Minimum TF-IDF similarity score for semantic fallback/fill. Default 0.0 (legacy).",
+    )
     args = ap.parse_args()
 
-    run(args.in_path, args.category, out_path=args.out)
+    run(
+        args.in_path,
+        args.category,
+        out_path=args.out,
+        fill_to_winners=bool(args.fill_to_winners),
+        min_qsim=float(args.min_qsim),
+    )
 
 
 if __name__ == "__main__":

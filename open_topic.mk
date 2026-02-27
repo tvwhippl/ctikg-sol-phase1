@@ -56,10 +56,17 @@ topic-pull:
 
 	@$(PY) scripts/make_helper_flags.py data/Links_Queue.csv
 
-# Helper macro: emit CAT (path) and CATNAME (safe name) for latest generated YAML
+# Helper macro: set CAT (path) + CATNAME (safe name).
+#
+# By default we use the most recently generated YAML under configs/categories/_generated.
+# For reproducible / multi-topic runs, prefer passing an explicit CAT=path/to/topic.yaml.
 define _cat_eval
-CAT=$$(ls -t configs/categories/_generated/*.yaml | head -n1) ;\
-[ -n "$$CAT" ] || { echo "No generated category YAML found in configs/categories/_generated/"; exit 2; } ;\
+if [ -n "$(CAT)" ]; then \
+  CAT="$(CAT)"; \
+else \
+  CAT=$$(ls -t configs/categories/_generated/*.yaml 2>/dev/null | head -n1); \
+fi ;\
+[ -n "$$CAT" ] || { echo "No category YAML resolved (set CAT=... or run make topic-gen)."; exit 2; } ;\
 CATNAME=$$($(PY) -c "import yaml,sys,re; p=sys.argv[1]; print(re.sub(r'[^A-Za-z0-9]+','_',yaml.safe_load(open(p))['name']).strip('_'))" $$CAT)
 endef
 

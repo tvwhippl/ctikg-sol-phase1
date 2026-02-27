@@ -1,9 +1,9 @@
 # ctikg-sol-phase1
 
 **Phase‑1 pipeline** to select topic‑focused CTI articles, scrape + triage them, and export inputs for CTIKG experiments.  
-Supports **Ollama** for local LLM‑assisted category/topic work.
+Supports **Ollama** (local) and **OpenAI‑compatible** LLM endpoints (e.g., ASU Voyager).
 
-> Status: verified end‑to‑end on macOS (Ollama + Python venv) — 2025-10-24.
+> Status: verified end‑to‑end (Ollama + OpenAI‑compatible backends) — see docs for exact env vars.
 
 ---
 
@@ -26,13 +26,22 @@ python3 -m venv .venv && source .venv/bin/activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 
-# 2) Ollama (local LLM) – start + pull a model
+# 2) LLM provider
+
+## Option A: Ollama (local LLM) – start + pull a model
 # (macOS) ensure service is up and model exists
 brew services start ollama
 ollama pull llama3.1:8b
 export LLM_PROVIDER=ollama
 export LLM_MODEL=llama3.1:8b
 export LLM_BASE_URL="http://127.0.0.1:11434"
+
+## Option B: OpenAI-compatible (e.g., ASU Voyager)
+
+export LLM_PROVIDER=openai
+export OPENAI_BASE_URL="https://openai.rc.asu.edu/v1"
+export OPENAI_API_KEY="YOUR_KEY"
+export LLM_MODEL="llama4-scout-17b"   # example; pick from the provider's model directory
 
 # 3) Generate/select topics
 make topic-setup
@@ -57,7 +66,10 @@ Outputs to check:
 - `results/scrape_log.csv` (success/error and reasons)
 - optional triage packs in repo root (e.g., `Triage_*_top200.csv`)
 
-For a step‑by‑step walkthrough and what each target does, see **[docs/QUICKSTART.md](docs/QUICKSTART.md)** and **[docs/PIPELINE.md](docs/PIPELINE.md)**.
+For a step‑by‑step walkthrough and what each target does, see:
+
+- **[docs/OPEN_TOPIC_QUICKSTART.md](docs/OPEN_TOPIC_QUICKSTART.md)** (open-topic pipeline; Ollama + Voyager)
+- **[docs/QUICKSTART.md](docs/QUICKSTART.md)** and **[docs/PIPELINE.md](docs/PIPELINE.md)** (phase‑1 pipeline background)
 
 ---
 
