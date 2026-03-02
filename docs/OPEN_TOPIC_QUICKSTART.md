@@ -1,19 +1,42 @@
 # Open Topic Pipeline Quickstart
 
-This repo supports an **open topic** workflow:
+This repo supports an **open topic** workflow.
 
-`topic-gen → topic-select → topic-scrape → topic-chunk → topic-verify`
+## v1 one-command open-topic (recommended)
 
-Given a human topic (e.g., **Remote Code Execution**), we:
-1) generate a topic YAML (`name/include/exclude/winners`) using an LLM,
-2) select winner URLs from a candidate link queue,
-3) scrape the winners,
-4) export `exports/ctikg_input.csv` (sentence rows) + `data/ctikg_docs_meta.json`,
-5) verify the export.
+If you want **one command** from a topic string → verified CTIKG inputs (Goal 1), run:
 
-> This pipeline produces **inputs** for CTIKG / LLM4CTIKG. It does **not** run KG extraction.
+```bash
+make open-topic \
+  TOPIC="Remote Code Execution" \
+  PROVIDER=openai MODEL="llama4-scout-17b" \
+  SCRAPE_MAX=25 CONCURRENCY=4 THROTTLE_SEC=1 IGNORE_ROBOTS=1
+```
+
+This writes an isolated run directory:
+
+- `runs/<SAFE_TOPIC>/<RUN_ID>/...`
+
+Key outputs (stable interface into CTIKG / LLM4CTIKG):
+
+- `runs/.../exports/ctikg_input.csv`
+- `runs/.../data/ctikg_docs_meta.json`
+
+Re-verify a run later:
+
+```bash
+make verify RUN_DIR="runs/<SAFE_TOPIC>/<RUN_ID>"
+```
 
 ---
+
+## Legacy multi-step pipeline
+
+The legacy Make targets are still supported, but they write to shared fixed paths (`data/`, `results/`, `exports/`, `artifacts/`) and will collide under batch runs.
+
+Legacy flow:
+
+`topic-gen → topic-pull → topic-select → topic-scrape → topic-chunk → topic-verify`
 
 ## Prereqs
 

@@ -43,27 +43,37 @@ export OPENAI_BASE_URL="https://openai.rc.asu.edu/v1"
 export OPENAI_API_KEY="YOUR_KEY"
 export LLM_MODEL="llama4-scout-17b"   # example; pick from the provider's model directory
 
-# 3) Generate/select topics
+# 3) One-command open-topic (recommended)
+make open-topic \
+  TOPIC="NFS File Share Exposure" \
+  PROVIDER="$LLM_PROVIDER" MODEL="$LLM_MODEL" \
+  SCRAPE_MAX=25 CONCURRENCY=4 THROTTLE_SEC=1 IGNORE_ROBOTS=1
+
+# The command prints: [OK] run_dir=runs/<SAFE_TOPIC>/<RUN_ID>
+# You can re-verify a specific run:
+# make verify RUN_DIR="runs/<SAFE_TOPIC>/<RUN_ID>"
+
+# 3b) Legacy multi-step pipeline (writes to shared paths under data/ results/ exports/ artifacts/)
 make topic-setup
 make topic-gen TOPIC="CI/CD pipeline attacks: runner poisoning, OIDC misconfiguration, artifact/cache poisoning"
 make topic-pull  SOURCES=configs/sources/common.json
 make topic-select
 
-# 4) Scrape
+# 4) Scrape (legacy)
 # tune WINNERS/CONCURRENCY/THROTTLE_SEC/IGNORE_ROBOTS as needed
 make topic-scrape WINNERS=25 CONCURRENCY=4 THROTTLE_SEC=1 IGNORE_ROBOTS=1
 
-# 5) Export & verify dataset
-python scripts/export_ctikg_input.py --in_jsonl results/scraped_corpus.jsonl   --out_csv exports/ctikg_input.csv --out_docs data/ctikg_docs_meta.json
-
+# 5) Export & verify dataset (legacy)
+python scripts/export_ctikg_input.py --in_jsonl results/scraped_corpus.jsonl --out_csv exports/ctikg_input.csv --out_docs data/ctikg_docs_meta.json
 python scripts/verify_export.py
 ```
 
 Outputs to check:
 
-- `exports/ctikg_input.csv` (sentences + url + category + title + source_domain)
-- `data/ctikg_docs_meta.json` (doc‑level metadata)
-- `results/scrape_log.csv` (success/error and reasons)
+- (open-topic) `runs/.../exports/ctikg_input.csv` (sentences + url + category + title + source_domain)
+- (open-topic) `runs/.../data/ctikg_docs_meta.json` (doc-level metadata)
+- (open-topic) `runs/.../scrape/scrape_log.csv` (success/error and reasons)
+- (legacy) `exports/ctikg_input.csv`, `data/ctikg_docs_meta.json`, `results/scrape_log.csv`
 - optional triage packs in repo root (e.g., `Triage_*_top200.csv`)
 
 For a step‑by‑step walkthrough and what each target does, see:

@@ -6,6 +6,31 @@ This document explains each stage, the inputs/outputs, and knobs you can tune.
 topics → queue → triage → selection → scrape → export → verify
 ```
 
+## v1 open-topic (one command)
+
+The canonical Goal-1 path is:
+
+```bash
+make open-topic TOPIC="..." PROVIDER=openai MODEL="..." SCRAPE_MAX=50
+```
+
+It writes all artifacts into an isolated per-run directory:
+
+- `runs/<SAFE_TOPIC>/<RUN_ID>/{config,queue,selection,scrape,artifacts,exports,data}`
+
+The stable interface into CTIKG / LLM4CTIKG is:
+
+- `runs/.../exports/ctikg_input.csv`
+- `runs/.../data/ctikg_docs_meta.json`
+
+Verify a run later with:
+
+```bash
+make verify RUN_DIR="runs/<SAFE_TOPIC>/<RUN_ID>"
+```
+
+---
+
 ## Topics
 
 - Author by hand or generate with `gen_category_from_llm.py` (Ollama).
