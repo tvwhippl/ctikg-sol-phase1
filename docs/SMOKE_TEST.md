@@ -1,14 +1,51 @@
-# Phase-1 Smoke Test (phase1 / topic pipeline)
+# Smoke tests
 
-## Purpose
-A fast, deterministic smoke test that verifies the end-to-end Phase-1 pipeline (topic-pull -> merge -> select -> small scrape -> export) before promoting to SOL or running large jobs. Designed to catch the "no rows" failure early.
+Smoke tests are fast, end-to-end checks that catch the most common failure mode:
 
-## Files
-- `tests/smoke_phase1.sh` — executable smoke test script.
-- `open_topic.mk` — Makefile target `topic-pull` now contains the fail-fast guard.
-- `scripts/merge_dedup.py` — accepts `--no-clobber-batch` to avoid overwrite.
+- “The pipeline ran, but produced no usable export rows.”
 
-## Run locally
-1. Activate your virtualenv:
-   ```bash
-   source .venv/bin/activate
+They are meant to be run locally before pushing changes or kicking off larger runs.
+
+---
+
+## v1 open-topic smoke test (recommended)
+
+This exercises the **one-command** interface:
+
+- `make open-topic ...` → scrape a tiny sample → export → verify
+
+It uses `PROVIDER=dry-run` so **topic YAML generation does not call an LLM**.
+
+### Run
+
+```bash
+source .venv/bin/activate
+bash tests/smoke_open_topic.sh
+```
+
+### Pass criteria
+
+- Script prints `SMOKE OPEN-TOPIC PASSED: runs/...`
+- The run contains:
+  - `runs/.../exports/ctikg_input.csv` (non-empty)
+  - `runs/.../data/ctikg_docs_meta.json` (non-empty)
+
+---
+
+## Legacy phase-1 smoke test
+
+This exercises the older multi-step Make flow (`topic-gen/topic-pull/topic-select/topic-scrape/topic-chunk`).
+
+### Run
+
+```bash
+source .venv/bin/activate
+bash tests/smoke_phase1.sh
+```
+
+---
+
+## Notes
+
+- Smoke tests still hit the network for link retrieval and scraping.
+- If a smoke test fails due to scraping denials/timeouts, reduce `CONCURRENCY`, increase `THROTTLE_SEC`, and re-run.

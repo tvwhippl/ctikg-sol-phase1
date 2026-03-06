@@ -6,6 +6,8 @@ rm -f data/Links_Queue.csv data/Links_Queue_sorted_flags.csv \
       results/scraped_corpus.jsonl results/scrape_log.csv
 
 make topic-pull SOURCES=configs/sources/common.json
+make topic-setup
+make topic-gen TOPIC="Remote Code Execution" LLM_PROVIDER=dry-run LLM_MODEL=ignored
 make topic-select
 make topic-scrape WINNERS=3 CONCURRENCY=1 THROTTLE_SEC=1 IGNORE_ROBOTS=1
 
