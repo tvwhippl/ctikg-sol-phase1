@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -126,9 +127,43 @@ world,https://example.com/b,example.com,Example B
 
     assert first == second
 
+    # The manifest is emitted with sort_keys=True. Enforce top-level key order for diff-friendliness.
+    top_keys = []
+    for line in first.splitlines():
+        m0 = re.match(r'^  "([^"]+)":', line)
+        if m0:
+            top_keys.append(m0.group(1))
+    assert top_keys == sorted(top_keys)
+
     m = json.loads(first)
     assert m["schema"] == "open-topic-run-manifest-v1"
     assert m["topic"] == "Remote Code Execution"
+
+    # Schema presence + basic typing
+    required_top = {
+        "schema",
+        "topic",
+        "safe_topic",
+        "run_id",
+        "run_dir",
+        "git",
+        "inputs",
+        "timing",
+        "selection",
+        "scrape",
+        "exports",
+        "verify",
+    }
+    assert required_top.issubset(set(m.keys()))
+    assert isinstance(m["git"], dict)
+
+    assert isinstance(m["inputs"], dict)
+    assert isinstance(m["inputs"]["cache"]["enabled"], bool)
+    assert isinstance(m["inputs"]["rescue"]["enabled"], bool)
+
+    durations = m["timing"]["durations_sec"]
+    for k in ("gen_yaml_sec", "queue_sec", "select_sec", "scrape_sec", "export_sec", "verify_sec"):
+        assert k in durations
 
     # URLs should be sorted by Rank then URL.
     assert m["selection"]["selected_urls"] == [
@@ -136,11 +171,18 @@ world,https://example.com/b,example.com,Example B
         "https://example.com/aa",
         "https://example.com/b",
     ]
+    assert m["selection"]["selected_total"] == len(m["selection"]["selected_urls"])
 
     # attempted list should follow the same order.
     attempted_urls = [x["url"] for x in m["scrape"]["attempted"]]
     assert attempted_urls == m["selection"]["selected_urls"]
+    assert m["scrape"]["attempted_total"] == len(m["scrape"]["attempted"])
+    assert m["scrape"]["ok_total"] == len(m["scrape"]["ok_urls"])
+    for item in m["scrape"]["attempted"]:
+        assert {"url", "status", "reason", "cache"}.issubset(set(item.keys()))
 
     # Basic row counts
     assert m["exports"]["ctikg_input_rows"] == 2
+    assert m["exports"]["docs_meta"]["type"] == "list"
+    assert m["exports"]["docs_meta"]["count"] == 2
     assert m["verify"]["status"] == "pass"
