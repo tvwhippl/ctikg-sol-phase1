@@ -28,6 +28,16 @@ fi
 test -s "$RUN_DIR/exports/ctikg_input.csv"
 test -s "$RUN_DIR/data/ctikg_docs_meta.json"
 test -s "$RUN_DIR/selection/ranked.csv"
+test -s "$RUN_DIR/manifest.json"
+
+python - <<PY
+import json
+from pathlib import Path
+m = json.loads(Path("$RUN_DIR/manifest.json").read_text(encoding="utf-8"))
+assert m.get("schema") == "open-topic-run-manifest-v1"
+assert m.get("selection", {}).get("selected_total", 0) >= 1
+PY
+
 
 echo "[smoke] verifying run: $RUN_DIR"
 make verify RUN_DIR="$RUN_DIR"

@@ -47,6 +47,54 @@ make open-topic TOPIC="Remote Code Execution" PROVIDER=dry-run MODEL=ignored \
 
 Note: the topic YAML field `winners` is metadata in the v1 path; the operational cap is `SCRAPE_MAX`.
 
+### Scrape caching (URL-based, safe-by-default for v1 open-topic)
+
+The v1 `make open-topic` pipeline enables a small shared URL→text cache by default so repeated runs (and pagination pages) don’t re-scrape identical URLs unnecessarily.
+
+- Default cache DB: `.cache/ctikg/scrape_cache.sqlite` (safe to delete)
+- Disable caching: `SCRAPE_CACHE=0`
+- Override location: `SCRAPE_CACHE_DB=path/to/cache.sqlite`
+- TTL: `SCRAPE_CACHE_TTL_DAYS=30` (set to `0` to disable expiration)
+
+Cache signals:
+
+- per-URL lines like: `[cache] HIT url=...`
+- summary line: `[cache] summary hits=<N> misses=<N> db=<path>`
+
+### Bounded rescue fill (opt-in, only when underfilled)
+
+Underfill is OK by default; the selector will **not** pad low-quality links.
+
+If you want to attempt a bounded semantic rescue *only when the selected slice underfills `SCRAPE_MAX`*, set:
+
+- `RESCUE=1`
+- `RESCUE_MAX_ADD` (max additional candidates appended; bounded)
+- `RESCUE_MIN_QSIM` (minimum semantic similarity threshold for rescue candidates)
+
+Example:
+
+```bash
+make open-topic TOPIC="Remote Code Execution" PROVIDER=dry-run MODEL=ignored \
+  SCRAPE_MAX=25 OFFSET=0 CONCURRENCY=2 THROTTLE_SEC=1 IGNORE_ROBOTS=1 \
+  RESCUE=1 RESCUE_MAX_ADD=50 RESCUE_MIN_QSIM=0.15
+```
+
+Rescue is fully logged and never runs unless the page is underfilled.
+
+### Run manifest (auditability)
+
+Each v1 run writes a deterministic JSON manifest:
+
+- `runs/<SAFE_TOPIC>/<RUN_ID>/manifest.json`
+
+It captures:
+
+- input parameters (topic, provider/model, `SCRAPE_MAX`/`OFFSET`, concurrency/throttle, ignore_robots)
+- selected URLs and scraped URLs
+- timestamps and step durations
+- verify status + export row counts
+
+
 ---
 
 ## Legacy multi-step pipeline

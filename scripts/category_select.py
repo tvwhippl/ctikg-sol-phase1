@@ -198,6 +198,9 @@ def _select_winners(
     offset: int = 0,
     fill_to_winners: bool = False,
     min_qsim: float = 0.0,
+    rescue_underfill: bool = False,
+    rescue_max_add: int = 0,
+    rescue_min_qsim: float = 0.10,
 ) -> Tuple[pd.DataFrame, bool, int, int]:
     name = str(cat.get("name") or "Topic").strip()
     include = [str(x).strip() for x in (cat.get("include") or []) if str(x).strip()]
@@ -224,7 +227,7 @@ def _select_winners(
     strict_mask = (df["__inc_hits"] > 0) & (df["__exc_hits"] == 0)
     strict_empty = not bool(strict_mask.any())
 
-    need_qsim = strict_empty or fill_to_winners or (ranked_path is not None)
+    need_qsim = strict_empty or fill_to_winners or rescue_underfill or (ranked_path is not None)
     if need_qsim:
         query = " ".join([name] + include).strip()
         df["__qsim"] = _tfidf_query_sim(query, df["__text"].tolist())
@@ -275,6 +278,68 @@ def _select_winners(
 
     selected = ranked.iloc[offset : offset + cap].copy()
 
+    # Bounded rescue: ONLY when underfilled and explicitly enabled.
+    # Underfill is acceptable by default; rescue must be opt-in.
+    if rescue_underfill:
+        underfill = cap - len(selected)
+        if underfill > 0:
+            target_len = int(offset) + int(cap)
+            need_more = max(0, target_len - len(ranked))
+            max_add = max(0, int(rescue_max_add or 0))
+            logger.info(
+                "Rescue underfill triggered: selected=%s/%s offset=%s ranked_total=%s need=%s max_add=%s min_qsim=%s",
+                len(selected),
+                cap,
+                int(offset),
+                len(ranked),
+                need_more,
+                max_add,
+                float(rescue_min_qsim),
+            )
+
+            added = 0
+            if need_more > 0 and max_add > 0:
+                add_n = min(need_more, max_add)
+                remaining = df[~df["URL"].isin(ranked["URL"])].copy()
+                remaining = remaining[remaining["__exc_hits"] == 0]
+                remaining = remaining[remaining["__qsim"] >= float(rescue_min_qsim)]
+                remaining.sort_values(
+                    by=["__qsim", "Quality4", "Quality2", "Score", "URL"],
+                    ascending=[False, False, False, False, True],
+                    inplace=True,
+                    kind="mergesort",
+                )
+                fill = remaining.drop_duplicates(subset=["URL"]).head(add_n).copy()
+                added = int(len(fill))
+
+                if added > 0:
+                    fallback_used = True
+                    pool = f"{pool}+rescue"
+                    ranked = (
+                        pd.concat([ranked, fill], ignore_index=True)
+                        .drop_duplicates(subset=["URL"])
+                        .reset_index(drop=True)
+                    )
+                    ranked["__rank"] = list(range(1, len(ranked) + 1))
+                    selected = ranked.iloc[offset : offset + cap].copy()
+
+            logger.info(
+                "Rescue underfill done: added=%s new_ranked_total=%s new_selected=%s/%s",
+                added,
+                len(ranked),
+                len(selected),
+                cap,
+            )
+        else:
+            logger.info(
+                "Rescue underfill not needed: selected=%s/%s offset=%s ranked_total=%s",
+                len(selected),
+                cap,
+                int(offset),
+                len(ranked),
+            )
+
+
     if ranked_path:
         Path(ranked_path).parent.mkdir(parents=True, exist_ok=True)
         _format_out(ranked, topic_name=name, fallback_used=fallback_used, pool=pool).to_csv(ranked_path, index=False)
@@ -296,6 +361,9 @@ def run(
     offset: int = 0,
     fill_to_winners: bool = False,
     min_qsim: float = 0.0,
+    rescue_underfill: bool = False,
+    rescue_max_add: int = 0,
+    rescue_min_qsim: float = 0.10,
 ) -> str:
     """Run selection and return selected CSV path."""
     cat = yaml.safe_load(Path(category_yaml_path).read_text(encoding="utf-8"))
@@ -330,6 +398,9 @@ def run(
         offset=int(offset or 0),
         fill_to_winners=bool(fill_to_winners),
         min_qsim=float(min_qsim),
+        rescue_underfill=bool(rescue_underfill),
+        rescue_max_add=int(rescue_max_add or 0),
+        rescue_min_qsim=float(rescue_min_qsim),
     )
 
     meta = f"yaml_winners={winners_int}" if scrape_max is not None else ""
@@ -369,6 +440,26 @@ def main() -> None:
         default=0.0,
         help="Minimum TF-IDF similarity score for semantic fallback/fill. Default 0.0 (legacy).",
     )
+    ap.add_argument(
+        "--rescue-underfill",
+        action="store_true",
+        help=(
+            "Attempt a bounded semantic rescue ONLY when the selected slice underfills the operational cap. "
+            "Rescue draws from remaining non-excluded candidates with QuerySim >= --rescue-min-qsim."
+        ),
+    )
+    ap.add_argument(
+        "--rescue-max-add",
+        type=int,
+        default=0,
+        help="Maximum additional candidates to append during rescue (bounded). 0 disables rescue fill.",
+    )
+    ap.add_argument(
+        "--rescue-min-qsim",
+        type=float,
+        default=0.10,
+        help="Minimum TF-IDF similarity (QuerySim) for rescue candidates. Default 0.10.",
+    )
     args = ap.parse_args()
 
     run(
@@ -381,6 +472,9 @@ def main() -> None:
         offset=int(args.offset or 0),
         fill_to_winners=bool(args.fill_to_winners),
         min_qsim=float(args.min_qsim),
+        rescue_underfill=bool(args.rescue_underfill),
+        rescue_max_add=int(args.rescue_max_add or 0),
+        rescue_min_qsim=float(args.rescue_min_qsim),
     )
 
 

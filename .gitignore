@@ -28,6 +28,9 @@ tmp/
 scraper_cache.sqlite
 .snapshots/
 
+# Local caches (never commit)
+.cache/
+
 # ------------------------------
 # Generated intermediates
 # ------------------------------

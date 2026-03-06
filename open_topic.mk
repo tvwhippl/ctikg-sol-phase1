@@ -23,6 +23,17 @@ RUNS_ROOT   ?= runs
 SCRAPE_MAX  ?= 50
 OFFSET     ?= 0
 
+# Scrape cache (safe-by-default for v1 open-topic: enabled)
+SCRAPE_CACHE ?= 1
+SCRAPE_CACHE_DB ?= .cache/ctikg/scrape_cache.sqlite
+SCRAPE_CACHE_TTL_DAYS ?= 30
+
+# Bounded rescue fill (default: off)
+RESCUE ?= 0
+RESCUE_MAX_ADD ?= 25
+RESCUE_MIN_QSIM ?= 0.10
+
+
 # Canonical one-command vars (aliases for backwards-compatible LLM_PROVIDER/LLM_MODEL)
 PROVIDER    ?= $(LLM_PROVIDER)
 MODEL       ?= $(LLM_MODEL)
@@ -153,13 +164,17 @@ open-topic:
 	@{ \
 		TOPIC_STR="$(TOPIC)"; \
 		SAFE_TOPIC=$$($(PY) -c "import re,sys; print(re.sub(r\"[^A-Za-z0-9]+\",\"_\",sys.argv[1]).strip(\"_\") or \"Topic\")" "$$TOPIC_STR"); \
-		RUN_ID=$$($(PY) -c "import datetime,os; print(datetime.datetime.utcnow().strftime(\"%Y%m%d-%H%M%S\") + \"-\" + str(os.getpid()))"); \
+		RUN_ID=$$($(PY) -c "import datetime,os; print(datetime.datetime.now(datetime.timezone.utc).strftime(\"%Y%m%d-%H%M%S\") + \"-\" + str(os.getpid()))"); \
 		RUN_DIR="$(RUNS_ROOT)/$$SAFE_TOPIC/$$RUN_ID"; \
+		RUN_STARTED_AT=$$(date -u +"%Y-%m-%dT%H:%M:%SZ"); \
+		DUR_GEN_YAML=0; DUR_QUEUE=0; DUR_SELECT=0; DUR_SCRAPE=0; DUR_EXPORT=0; DUR_VERIFY=0; \
+		VERIFY_STATUS=unknown; VERIFY_RC=0; \
 		echo "[open-topic] topic=$$TOPIC_STR"; \
 		echo "[open-topic] provider=$(PROVIDER) model=$(MODEL)"; \
 		echo "[open-topic] run_dir=$$RUN_DIR"; \
 		mkdir -p "$$RUN_DIR"/{config,queue,selection,scrape,artifacts,exports,data}; \
 		\
+		t_step=$$(date +%s); \
 		# 1) Generate a per-run topic YAML (no reliance on latest generated YAML) \
 		$(PY) scripts/gen_category_from_llm.py \
 			--topic "$$TOPIC_STR" \
@@ -167,7 +182,9 @@ open-topic:
 			--model "$(MODEL)" \
 			--winners $(SCRAPE_MAX) \
 			--out "$$RUN_DIR/config/topic.yaml"; \
+		DUR_GEN_YAML=$$(( $$(date +%s) - t_step )); \
 		\
+		t_step=$$(date +%s); \
 		# 2) Build a per-run queue snapshot \
 		cp "$(SOURCES)" "$$RUN_DIR/queue/sources.json"; \
 		cp "configs/Category_Keywords_Expanded.json" "$$RUN_DIR/queue/categories.json"; \
@@ -184,7 +201,9 @@ open-topic:
 			--in "$$RUN_DIR/queue/Links_Queue.csv" \
 			--out "$$RUN_DIR/queue/Links_Queue_sorted_flags.csv" \
 			--no-triage; \
+		DUR_QUEUE=$$(( $$(date +%s) - t_step )); \
 		\
+		t_step=$$(date +%s); \
 		# 3) Select + scrape + export + verify \
 		$(PY) scripts/category_select.py \
 			--in "$$RUN_DIR/queue/Links_Queue_sorted_flags.csv" \
@@ -192,9 +211,12 @@ open-topic:
 			--ranked-out "$$RUN_DIR/selection/ranked.csv" \
 			--selected-out "$$RUN_DIR/selection/selected.csv" \
 			--scrape-max $(SCRAPE_MAX) \
-			--offset $(OFFSET); \
+			--offset $(OFFSET) \
+			$(if $(filter 1,$(RESCUE)),--rescue-underfill --rescue-max-add $(RESCUE_MAX_ADD) --rescue-min-qsim $(RESCUE_MIN_QSIM)); \
 		wc -l "$$RUN_DIR/selection/selected.csv" | awk '{ if ($$1 <= 1) { print "ERROR: selection empty"; exit 2 } }'; \
+		DUR_SELECT=$$(( $$(date +%s) - t_step )); \
 		\
+		t_step=$$(date +%s); \
 		$(PY) scripts/scrape_selected.py \
 			--in "$$RUN_DIR/selection/selected.csv" \
 			--out "$$RUN_DIR/scrape/scrape_log.csv" \
@@ -202,17 +224,57 @@ open-topic:
 			--artifacts "$$RUN_DIR/artifacts" \
 			--max_per_category $(SCRAPE_MAX) \
 			--concurrency $(CONCURRENCY) $(if $(filter 1,$(IGNORE_ROBOTS)),--ignore_robots) \
-			--throttle_sec $(THROTTLE_SEC); \
+			--throttle_sec $(THROTTLE_SEC) \
+			$(if $(filter 1,$(SCRAPE_CACHE)),--cache-db "$(SCRAPE_CACHE_DB)" --cache-ttl-days $(SCRAPE_CACHE_TTL_DAYS),--no-cache) \
+			--stats-json "$$RUN_DIR/scrape/scrape_stats.json"; \
+		DUR_SCRAPE=$$(( $$(date +%s) - t_step )); \
 		\
+		t_step=$$(date +%s); \
 		$(PY) scripts/export_ctikg_input.py \
 			--in_jsonl "$$RUN_DIR/scrape/scraped_corpus.jsonl" \
 			--out_csv "$$RUN_DIR/exports/ctikg_input.csv" \
 			--out_docs "$$RUN_DIR/data/ctikg_docs_meta.json" \
 			--log_csv "$$RUN_DIR/scrape/scrape_log.csv"; \
+		DUR_EXPORT=$$(( $$(date +%s) - t_step )); \
 		\
+		t_step=$$(date +%s); \
+		set +e; \
 		$(PY) scripts/verify_export.py \
 			--corpus "$$RUN_DIR/scrape/scraped_corpus.jsonl" \
 			--csv "$$RUN_DIR/exports/ctikg_input.csv"; \
+		VERIFY_RC=$$?; \
+		set -e; \
+		DUR_VERIFY=$$(( $$(date +%s) - t_step )); \
+		if [ $$VERIFY_RC -eq 0 ]; then VERIFY_STATUS=pass; else VERIFY_STATUS=fail; fi; \
+		RUN_FINISHED_AT=$$(date -u +"%Y-%m-%dT%H:%M:%SZ"); \
+		\
+		$(PY) scripts/write_run_manifest.py \
+			--run-dir "$$RUN_DIR" \
+			--topic "$$TOPIC_STR" \
+			--provider "$(PROVIDER)" \
+			--model "$(MODEL)" \
+			--scrape-max $(SCRAPE_MAX) \
+			--offset $(OFFSET) \
+			--concurrency $(CONCURRENCY) \
+			--throttle-sec $(THROTTLE_SEC) \
+			--ignore-robots $(IGNORE_ROBOTS) \
+			--cache-enabled $(SCRAPE_CACHE) \
+			--cache-db "$(SCRAPE_CACHE_DB)" \
+			--cache-ttl-days $(SCRAPE_CACHE_TTL_DAYS) \
+			--rescue-enabled $(RESCUE) \
+			--rescue-max-add $(RESCUE_MAX_ADD) \
+			--rescue-min-qsim $(RESCUE_MIN_QSIM) \
+			--run-started-at-utc "$$RUN_STARTED_AT" \
+			--run-finished-at-utc "$$RUN_FINISHED_AT" \
+			--dur-gen-yaml-sec $$DUR_GEN_YAML \
+			--dur-queue-sec $$DUR_QUEUE \
+			--dur-select-sec $$DUR_SELECT \
+			--dur-scrape-sec $$DUR_SCRAPE \
+			--dur-export-sec $$DUR_EXPORT \
+			--dur-verify-sec $$DUR_VERIFY \
+			--verify-status $$VERIFY_STATUS; \
+		\
+		if [ $$VERIFY_RC -ne 0 ]; then exit $$VERIFY_RC; fi; \
 		echo "[OK] run_dir=$$RUN_DIR"; \
 	}
 
