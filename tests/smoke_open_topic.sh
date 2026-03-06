@@ -27,6 +27,7 @@ fi
 
 test -s "$RUN_DIR/exports/ctikg_input.csv"
 test -s "$RUN_DIR/data/ctikg_docs_meta.json"
+test -s "$RUN_DIR/selection/ranked.csv"
 
 echo "[smoke] verifying run: $RUN_DIR"
 make verify RUN_DIR="$RUN_DIR"

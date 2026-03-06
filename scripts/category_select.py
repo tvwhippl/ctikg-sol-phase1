@@ -152,86 +152,112 @@ def _tfidf_query_sim(query: str, docs: List[str]) -> List[float]:
     except Exception:
         return [0.0] * len(docs)
 
+def _format_out(df: pd.DataFrame, *, topic_name: str, fallback_used: bool, pool: str) -> pd.DataFrame:
+    """Format ranked/selected outputs with stable, scraper-friendly columns.
+
+    ranked.csv is for debugging/determinism; selected.csv is the slice used for scraping.
+    """
+    for c in ["Score", "Quality4", "Quality2", "RepFlag", "SigFlag", "Status"]:
+        if c not in df.columns:
+            df[c] = 0
+
+    if "__rank" not in df.columns:
+        df["__rank"] = list(range(1, len(df) + 1))
+
+    out_df = pd.DataFrame(
+        {
+            "Rank": df.get("__rank", 0),
+            "URL": df.get("URL", ""),
+            "Title": df.get("Title", ""),
+            "Source_Domain": df.get("Source_Domain", ""),
+            "Category": topic_name,
+            "Score": df.get("Score", 0),
+            "Quality4": df.get("Quality4", 0),
+            "Quality2": df.get("Quality2", 0),
+            "RepFlag": df.get("RepFlag", 0),
+            "SigFlag": df.get("SigFlag", 0),
+            "Status": df.get("Status", ""),
+            "TopicScore": df.get("__topic_score", 0),
+            "IncHits": df.get("__inc_hits", 0),
+            "ExcHits": df.get("__exc_hits", 0),
+            "QuerySim": df.get("__qsim", 0.0),
+            "CandidatePool": pool,
+            "FallbackUsed": fallback_used,
+        }
+    )
+    return out_df
+
+
 def _select_winners(
     df: pd.DataFrame,
     cat: Dict[str, Any],
-    out_path: str,
+    selected_path: str,
     *,
+    ranked_path: str | None = None,
+    scrape_max: int | None = None,
+    offset: int = 0,
     fill_to_winners: bool = False,
     min_qsim: float = 0.0,
-) -> Tuple[pd.DataFrame, bool]:
+) -> Tuple[pd.DataFrame, bool, int, int]:
     name = str(cat.get("name") or "Topic").strip()
     include = [str(x).strip() for x in (cat.get("include") or []) if str(x).strip()]
     exclude = [str(x).strip() for x in (cat.get("exclude") or []) if str(x).strip()]
-    winners = int(cat.get("winners") or 100)
-    winners = max(1, winners)
+
+    winners_yaml = int(cat.get("winners") or 100)
+    winners_yaml = max(1, winners_yaml)
+
+    cap = int(scrape_max) if scrape_max is not None else winners_yaml
+    cap = max(1, cap)
+
+    offset = int(offset or 0)
+    offset = max(0, offset)
 
     df = _normalize_cols(df)
+    df = _coerce_numeric(df, ["Score", "Quality4", "Quality2", "RepFlag", "SigFlag"])
     df["__text"] = (df["Title"].fillna("") + "\n" + df["Snippet"].fillna("")).astype(str).str.lower()
 
-    # Primary scoring: include/exclude hits
     df["__inc_hits"] = df["__text"].apply(lambda t: _count_hits(t, include))
     df["__exc_hits"] = df["__text"].apply(lambda t: _count_hits(t, exclude)) if exclude else 0
     df["__topic_score"] = df["__inc_hits"] - (2 * df["__exc_hits"])
-
-    # Always have these columns, even if we don't compute them yet
     df["__qsim"] = 0.0
 
-    # Strict candidate set: include hits > 0 and no exclude hits
-    #
-    # IMPORTANT behavioral choice (for scaling):
-    # - If we have *any* strict matches, we prefer to **underfill** rather than
-    #   pad to `winners` with weak semantic matches.
-    # - We only use semantic fallback to *rescue* the case where strict matches
-    #   are empty, or when `fill_to_winners=True`.
-    cand_strict = df[(df["__inc_hits"] > 0) & (df["__exc_hits"] == 0)].copy()
-    cand = cand_strict
-    fallback_used = False
+    strict_mask = (df["__inc_hits"] > 0) & (df["__exc_hits"] == 0)
+    strict_empty = not bool(strict_mask.any())
 
-    # Compute TF-IDF similarity only when needed.
-    need_qsim = cand.empty or fill_to_winners
+    need_qsim = strict_empty or fill_to_winners or (ranked_path is not None)
     if need_qsim:
         query = " ".join([name] + include).strip()
         df["__qsim"] = _tfidf_query_sim(query, df["__text"].tolist())
 
-    # If strict match set is empty, fall back to TF-IDF similarity.
+    cand = df[strict_mask].copy()
+    fallback_used = False
+    pool = "strict"
+
     if cand.empty:
         fallback_used = True
-        # Prefer rows that have *some* semantic match to the topic.
-        # `min_qsim` defaults to 0.0 (legacy behavior), but can be raised to reduce noise.
+        pool = "fallback_qsim"
         cand = df[(df["__qsim"] >= float(min_qsim)) & (df["__exc_hits"] == 0)].copy()
-
-        # If similarity yields nothing (e.g., all zeros), revert to exclude-only.
         if cand.empty:
+            pool = "fallback_exclude_only"
             cand = df[df["__exc_hits"] == 0].copy()
 
-    # Ranking: topic score first, then similarity, then existing quality/score fields
-    sort_cols = ["__topic_score", "__qsim", "Quality4", "Quality2", "Score"]
-    # Ensure missing sort cols exist
-    for c in sort_cols:
-        if c not in cand.columns:
-            cand[c] = 0
-
     cand.sort_values(
-        by=sort_cols,
-        ascending=[False, False, False, False, False],
+        by=["__topic_score", "__qsim", "Quality4", "Quality2", "Score", "URL"],
+        ascending=[False, False, False, False, False, True],
         inplace=True,
         kind="mergesort",
     )
 
-    # Dedupe by URL; take top winners
-    selected = cand.drop_duplicates(subset=["URL"]).head(winners).copy()
+    ranked = cand.drop_duplicates(subset=["URL"]).copy().reset_index(drop=True)
+    ranked["__rank"] = list(range(1, len(ranked) + 1))
 
-    # Optional: fill to `winners` using similarity-ranked remaining rows.
-    # Default is OFF to avoid low-precision padding during large batch runs.
-    if fill_to_winners and len(selected) < winners:
-        need = winners - len(selected)
-        remaining = df[~df["URL"].isin(selected["URL"])].copy()
+    if fill_to_winners and not strict_empty and len(ranked) < cap:
+        need = cap - len(ranked)
+        remaining = df[~df["URL"].isin(ranked["URL"])].copy()
         remaining = remaining[remaining["__exc_hits"] == 0]
-        # qsim already computed above when fill_to_winners=True
         remaining.sort_values(
-            by=["__qsim", "Quality4", "Quality2", "Score"],
-            ascending=[False, False, False, False],
+            by=["__qsim", "Quality4", "Quality2", "Score", "URL"],
+            ascending=[False, False, False, False, True],
             inplace=True,
             kind="mergesort",
         )
@@ -239,51 +265,39 @@ def _select_winners(
             remaining[remaining["__qsim"] >= float(min_qsim)]
             .drop_duplicates(subset=["URL"])
             .head(need)
+            .copy()
         )
         if len(fill) > 0:
             fallback_used = True
-            # Mark these as fallback rows.
-            fill = fill.copy()
-            fill["__is_fallback_row"] = True
-            selected["__is_fallback_row"] = False
-            selected = pd.concat([selected, fill], ignore_index=True)
-        else:
-            selected["__is_fallback_row"] = False
-    else:
-        selected["__is_fallback_row"] = False
+            pool = "strict+fill"
+            ranked = pd.concat([ranked, fill], ignore_index=True).drop_duplicates(subset=["URL"]).reset_index(drop=True)
+            ranked["__rank"] = list(range(1, len(ranked) + 1))
 
-    # Output with debug columns so you can see WHY a row was selected
-    out_df = pd.DataFrame(
-        {
-            "URL": selected["URL"],
-            "Title": selected["Title"],
-            "Source_Domain": selected["Source_Domain"],
-            "Category": name,
-            "Score": selected.get("Score", 0),
-            "TopicScore": selected.get("__topic_score", 0),
-            "IncHits": selected.get("__inc_hits", 0),
-            "ExcHits": selected.get("__exc_hits", 0),
-            "QuerySim": selected.get("__qsim", 0.0),
-            "IsFallbackRow": selected.get("__is_fallback_row", False),
-            "FallbackUsed": fallback_used,
-        }
-    )
-    out_df.to_csv(out_path, index=False)
-    return out_df, fallback_used
+    selected = ranked.iloc[offset : offset + cap].copy()
 
+    if ranked_path:
+        Path(ranked_path).parent.mkdir(parents=True, exist_ok=True)
+        _format_out(ranked, topic_name=name, fallback_used=fallback_used, pool=pool).to_csv(ranked_path, index=False)
+
+    Path(selected_path).parent.mkdir(parents=True, exist_ok=True)
+    out_selected = _format_out(selected, topic_name=name, fallback_used=fallback_used, pool=pool)
+    out_selected.to_csv(selected_path, index=False)
+
+    return out_selected, fallback_used, cap, len(ranked)
 
 def run(
     in_path: str,
     category_yaml_path: str,
     out_path: str | None = None,
     *,
+    ranked_path: str | None = None,
+    selected_path: str | None = None,
+    scrape_max: int | None = None,
+    offset: int = 0,
     fill_to_winners: bool = False,
     min_qsim: float = 0.0,
 ) -> str:
-    """Run selection and return output CSV path.
-
-    This is the entrypoint used by open_topic.mk (topic-select) and unit tests.
-    """
+    """Run selection and return selected CSV path."""
     cat = yaml.safe_load(Path(category_yaml_path).read_text(encoding="utf-8"))
     if not isinstance(cat, dict):
         raise ValueError(f"Category YAML must be a mapping/object: {category_yaml_path}")
@@ -297,46 +311,57 @@ def run(
         except Exception:
             winners_int = 100
 
-    # output path default: alongside the queue CSV
+    if selected_path is None:
+        selected_path = out_path
+
     safe = _safe_name(name)
-    if out_path is None:
+    if selected_path is None:
         out_dir = Path(in_path).parent
-        out_path = str(out_dir / f"Selected_{safe}.csv")
+        selected_path = str(out_dir / f"Selected_{safe}.csv")
 
-    # load + normalize
     df = pd.read_csv(in_path)
-    df = _normalize_cols(df)
 
-    # select + write
-    out_df, fallback_used = _select_winners(
+    out_df, fallback_used, cap, ranked_total = _select_winners(
         df,
         cat=cat,
-        out_path=out_path,
+        selected_path=str(selected_path),
+        ranked_path=ranked_path,
+        scrape_max=scrape_max,
+        offset=int(offset or 0),
         fill_to_winners=bool(fill_to_winners),
         min_qsim=float(min_qsim),
     )
 
+    meta = f"yaml_winners={winners_int}" if scrape_max is not None else ""
     logger.info(
-        "Selected %s/%s winners for '%s' (fallback_used=%s) -> %s",
+        "Selected %s/%s for '%s' offset=%s ranked_total=%s (fallback_used=%s) %s -> %s",
         len(out_df),
-        winners_int,
+        cap,
         name,
+        int(offset or 0),
+        ranked_total,
         fallback_used,
-        out_path,
+        meta,
+        selected_path,
     )
-    return out_path
-
-
+    return str(selected_path)
 def main() -> None:
 
     ap = argparse.ArgumentParser(description="Select winners for a generated category YAML")
     ap.add_argument("--in", dest="in_path", required=True, help="Input queue CSV (e.g., data/Links_Queue_sorted_flags.csv)")
     ap.add_argument("--category", required=True, help="Category YAML path (name/include/exclude/winners)")
-    ap.add_argument("--out", default=None, help="Optional explicit output CSV path")
+
+    ap.add_argument("--out", default=None, help="(deprecated) Selected output CSV path (alias for --selected-out)")
+    ap.add_argument("--selected-out", default=None, help="Selected output CSV path (slice used for scraping)")
+    ap.add_argument("--ranked-out", default=None, help="Ranked output CSV path (full ranked candidates)")
+
+    ap.add_argument("--scrape-max", type=int, default=None, help="Operational cap for selected slice (overrides YAML winners)")
+    ap.add_argument("--offset", type=int, default=0, help="Offset into ranked list for pagination (default: 0)")
+
     ap.add_argument(
         "--fill-to-winners",
         action="store_true",
-        help="If set, pad selection up to `winners` using semantic similarity (lower precision).",
+        help="If set, pad selection up to the operational cap using semantic similarity (lower precision).",
     )
     ap.add_argument(
         "--min-qsim",
@@ -350,6 +375,10 @@ def main() -> None:
         args.in_path,
         args.category,
         out_path=args.out,
+        ranked_path=args.ranked_out,
+        selected_path=args.selected_out,
+        scrape_max=args.scrape_max,
+        offset=int(args.offset or 0),
         fill_to_winners=bool(args.fill_to_winners),
         min_qsim=float(args.min_qsim),
     )

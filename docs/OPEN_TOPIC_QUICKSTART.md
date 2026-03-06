@@ -10,7 +10,7 @@ If you want **one command** from a topic string → verified CTIKG inputs (Goal 
 make open-topic \
   TOPIC="Remote Code Execution" \
   PROVIDER=openai MODEL="llama4-scout-17b" \
-  SCRAPE_MAX=25 CONCURRENCY=4 THROTTLE_SEC=1 IGNORE_ROBOTS=1
+  SCRAPE_MAX=25 OFFSET=0 CONCURRENCY=4 THROTTLE_SEC=1 IGNORE_ROBOTS=1
 ```
 
 This writes an isolated run directory:
@@ -27,6 +27,25 @@ Re-verify a run later:
 ```bash
 make verify RUN_DIR="runs/<SAFE_TOPIC>/<RUN_ID>"
 ```
+
+### Pagination with `OFFSET`
+
+Selection outputs (for debugging + pagination):
+
+- `runs/.../selection/ranked.csv` (full ranked candidates; not capped by `SCRAPE_MAX`)
+- `runs/.../selection/selected.csv` (slice used for scraping: `OFFSET .. OFFSET+SCRAPE_MAX`)
+
+Example: scrape 3 at a time (page 0 then page 1):
+
+```bash
+make open-topic TOPIC="Remote Code Execution" PROVIDER=dry-run MODEL=ignored \
+  SCRAPE_MAX=3 OFFSET=0 CONCURRENCY=1 THROTTLE_SEC=1 IGNORE_ROBOTS=1
+
+make open-topic TOPIC="Remote Code Execution" PROVIDER=dry-run MODEL=ignored \
+  SCRAPE_MAX=3 OFFSET=3 CONCURRENCY=1 THROTTLE_SEC=1 IGNORE_ROBOTS=1
+```
+
+Note: the topic YAML field `winners` is metadata in the v1 path; the operational cap is `SCRAPE_MAX`.
 
 ---
 

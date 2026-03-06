@@ -21,6 +21,7 @@ LLM_MODEL    ?= llama3.1
 # v1 open-topic (per-run isolated)
 RUNS_ROOT   ?= runs
 SCRAPE_MAX  ?= 50
+OFFSET     ?= 0
 
 # Canonical one-command vars (aliases for backwards-compatible LLM_PROVIDER/LLM_MODEL)
 PROVIDER    ?= $(LLM_PROVIDER)
@@ -188,7 +189,10 @@ open-topic:
 		$(PY) scripts/category_select.py \
 			--in "$$RUN_DIR/queue/Links_Queue_sorted_flags.csv" \
 			--category "$$RUN_DIR/config/topic.yaml" \
-			--out "$$RUN_DIR/selection/selected.csv"; \
+			--ranked-out "$$RUN_DIR/selection/ranked.csv" \
+			--selected-out "$$RUN_DIR/selection/selected.csv" \
+			--scrape-max $(SCRAPE_MAX) \
+			--offset $(OFFSET); \
 		wc -l "$$RUN_DIR/selection/selected.csv" | awk '{ if ($$1 <= 1) { print "ERROR: selection empty"; exit 2 } }'; \
 		\
 		$(PY) scripts/scrape_selected.py \
