@@ -1,14 +1,4 @@
 {
-  {"type":"rss","url":"https://github.blog/feed/","domain_weight":0.6},
-{"type":"rss","url":"https://unit42.paloaltonetworks.com/feed/","domain_weight":0.9},
-{"type":"rss","url":"https://blog.talosintelligence.com/feed/","domain_weight":0.8},
-{"type":"rss","url":"https://blog.gitguardian.com/rss/","domain_weight":0.8},
-{"type":"rss","url":"https://snyk.io/blog/feed/","domain_weight":0.7},
-{"type":"rss","url":"https://jfrog.com/blog/feed/","domain_weight":0.7},
-{"type":"rss","url":"https://blog.aquasec.com/rss.xml","domain_weight":0.7},
-{"type":"rss","url":"https://research.nccgroup.com/feed/","domain_weight":0.8},
-{"type":"rss","url":"https://www.trendmicro.com/en_us/research/rss/all.xml","domain_weight":0.7},
-{"type":"rss","url":"https://www.crowdstrike.com/blog/feed/","domain_weight":0.8}
   "domains": {
     "www.cisa.gov": {
       "weight": 1.0,
