@@ -1,3 +1,15 @@
+## LLM4CTI handoff
+
+For the current notebook-based LLM4CTI workflow, the preferred downstream bridge is **article-level export**, not just sentence-level CSV.
+
+Primary notebook bridge:
+- `docs/LLM4CTI_NOTEBOOK_BRIDGE.md`
+- `scripts/export_llm4cti_articles.py`
+
+Secondary paths:
+- `exports/ctikg_input.csv` for sentence-level inspection / compatibility
+- `docs/SIMPLE_CTIKG_INTEGRATION.md` for the optional single-prompt adapter
+
 # ctikg-sol-phase1
 
 **Phase‑1 pipeline** to select topic‑focused CTI articles, scrape + triage them, and export inputs for CTIKG experiments.  

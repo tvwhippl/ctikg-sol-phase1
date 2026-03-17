@@ -1,6 +1,14 @@
-# Simple CTIKG Integration (adapter)
+# Simple CTIKG Integration (optional adapter)
 
-This document describes the adapter `scripts/run_simple_ctikg.py` which converts the Phase-1 pipeline output `results/scraped_corpus.jsonl` to a single-prompt Simple CTIKG run.
+This document describes the optional adapter `scripts/run_simple_ctikg.py`.
+
+It is useful for quick smoke tests, but it is not the primary handoff path for the current notebook-based LLM4CTI workflow.
+
+Primary notebook bridge:
+- `docs/LLM4CTI_NOTEBOOK_BRIDGE.md`
+- `scripts/export_llm4cti_articles.py`
+
+This adapter converts Phase-1 pipeline output `results/scraped_corpus.jsonl` to a simplified single-prompt CTIKG-style run.
 
 ## Quickstart
 
@@ -8,7 +16,7 @@ This document describes the adapter `scripts/run_simple_ctikg.py` which converts
 
 ```bash
 source .venv/bin/activate
-````
+```
 
 2. Run the Phase-1 smoke test (or run the pipeline manually until results/scraped_corpus.jsonl exists):
 

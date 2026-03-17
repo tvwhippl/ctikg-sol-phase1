@@ -1,3 +1,18 @@
+## Downstream handoff
+
+After a run completes, treat these outputs differently:
+
+Primary notebook handoff:
+- `scrape/scraped_corpus.jsonl`
+- `scripts/export_llm4cti_articles.py`
+- `<RUN_DIR>/llm4cti/Articles.xlsx`
+- `<RUN_DIR>/llm4cti/llm4cti_articles.csv`
+- `<RUN_DIR>/llm4cti/llm4cti_articles_meta.json`
+
+Secondary outputs:
+- `exports/ctikg_input.csv`
+- `scripts/run_simple_ctikg.py` (optional adapter)
+
 # Open Topic Pipeline Quickstart
 
 This repo supports an **open topic** workflow.
@@ -17,8 +32,15 @@ This writes an isolated run directory:
 
 - `runs/<SAFE_TOPIC>/<RUN_ID>/...`
 
-Key outputs (stable interface into CTIKG / LLM4CTIKG):
+Key outputs after a run completes:
 
+Primary notebook handoff:
+- `runs/.../scrape/scraped_corpus.jsonl`
+- `runs/.../llm4cti/Articles.xlsx`
+- `runs/.../llm4cti/llm4cti_articles.csv`
+- `runs/.../llm4cti/llm4cti_articles_meta.json`
+
+Secondary exports:
 - `runs/.../exports/ctikg_input.csv`
 - `runs/.../data/ctikg_docs_meta.json`
 
