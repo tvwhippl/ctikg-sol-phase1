@@ -27,7 +27,8 @@ OFFSET=$(( SLURM_ARRAY_TASK_ID * STRIDE ))
 # Keep cache off on shared FS (avoid sqlite contention)
 export SCRAPE_CACHE=0
 
-RUN_ROOT="runs/Remote_Code_Execution/slurm-${SLURM_JOB_ID}"
+SAFE_TOPIC="${SAFE_TOPIC:-$(basename "$STAGE_DIR")}"
+RUN_ROOT="runs/${SAFE_TOPIC}/slurm-${SLURM_JOB_ID}"
 RUN_DIR="${RUN_ROOT}/offset_${OFFSET}"
 
 echo "[INFO] job=${SLURM_JOB_ID} task=${SLURM_ARRAY_TASK_ID} topic=${TOPIC} offset=${OFFSET} scrape_max=${SCRAPE_MAX}"
