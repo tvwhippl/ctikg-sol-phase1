@@ -32,17 +32,21 @@ This writes an isolated run directory:
 
 - `runs/<SAFE_TOPIC>/<RUN_ID>/...`
 
-Key outputs after a run completes:
+Key outputs immediately after a run completes:
 
-Primary notebook handoff:
+Immediate outputs:
 - `runs/.../scrape/scraped_corpus.jsonl`
+- `runs/.../exports/ctikg_input.csv`
+- `runs/.../data/ctikg_docs_meta.json`
+
+Manual post-run notebook handoff (after running `scripts/export_llm4cti_articles.py`):
 - `runs/.../llm4cti/Articles.xlsx`
 - `runs/.../llm4cti/llm4cti_articles.csv`
 - `runs/.../llm4cti/llm4cti_articles_meta.json`
 
-Secondary exports:
-- `runs/.../exports/ctikg_input.csv`
-- `runs/.../data/ctikg_docs_meta.json`
+Create notebook handoff files explicitly after the run:
+
+`python scripts/export_llm4cti_articles.py --run-dir runs/<SAFE_TOPIC>/<RUN_ID>`
 
 Re-verify a run later:
 
@@ -298,4 +302,24 @@ python scripts/batch_run_open_topic.py \
   --concurrency 6 --throttle-sec 1
 ```
 
-For HPC: use a job array and pass one YAML per task (see `sol_jobs/`).
+For SOL / HPC: use the canonical ranked-offset path documented in `docs/SOL_RUNBOOK.md` and `sol_jobs/open_topic_ranked_offsets_array.slurm`.
+
+
+## Repeat-topic operator loop
+
+For this phase, the recommended multi-topic pattern is:
+
+1. choose a topic
+2. run a bounded open-topic pass
+3. inspect relevance and keep the best supported batch
+4. export article-level notebook handoff files manually:
+   - `python scripts/export_llm4cti_articles.py --run-dir runs/<SAFE_TOPIC>/<RUN_ID>`
+5. package evidence for that run
+6. move to the next viable topic
+
+This repo does **not** require every topic to reach a fixed size target.
+The better operator pattern is to capture the best relevant batch a topic supports, preserve provenance, and proceed to the next topic.
+
+For local sequential runs across many YAMLs, `scripts/batch_run_open_topic.py` is available.
+For SOL / HPC, prefer the canonical ranked-offset path in `docs/SOL_RUNBOOK.md`.
+

@@ -1,5 +1,10 @@
 # Quick start
 
+Legacy fixed-path workflow.
+
+This document describes the older shared-path workflow under `data/`, `results/`, and `exports/`.
+For the recommended per-run open-topic path, use `docs/OPEN_TOPIC_QUICKSTART.md`.
+
 The short path from a fresh clone to a verified CSV export.
 
 ## 0) Clone and set up Python

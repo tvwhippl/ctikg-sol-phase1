@@ -7,7 +7,7 @@ Legacy behavior (kept):
   python3 scripts/make_helper_flags.py data/Links_Queue.csv
 
   - writes: data/Links_Queue_sorted_flags.csv
-  - writes: Triage_*_top200.csv and Suggested_Selected_master.csv in repo root
+  - optionally writes runtime triage packs for manual review
 
 New behavior (for per-run open-topic isolation):
   python3 scripts/make_helper_flags.py --in <queue.csv> --out <flags.csv> --no-triage
@@ -300,7 +300,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--no-triage",
         action="store_true",
-        help="Do not write triage packs (Triage_*.csv / Suggested_Selected_master.csv)",
+        help="Do not write optional runtime triage packs",
     )
     ap.add_argument(
         "--triage-dir",

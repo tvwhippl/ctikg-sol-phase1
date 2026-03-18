@@ -46,3 +46,7 @@ tzlocal==5.3.1
 url-normalize==2.2.1
 urllib3==2.5.0
 wheel==0.45.1
+openpyxl==3.1.5
+openai==2.28.0
+networkx==3.6.1
+json-repair==0.58.6

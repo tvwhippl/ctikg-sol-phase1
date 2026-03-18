@@ -82,11 +82,15 @@ python scripts/verify_export.py
 
 Outputs to check:
 
-- (open-topic) `runs/.../exports/ctikg_input.csv` (sentences + url + category + title + source_domain)
-- (open-topic) `runs/.../data/ctikg_docs_meta.json` (doc-level metadata)
-- (open-topic) `runs/.../scrape/scrape_log.csv` (success/error and reasons)
+- (open-topic, immediate) `runs/.../scrape/scraped_corpus.jsonl`
+- (open-topic, immediate) `runs/.../exports/ctikg_input.csv`
+- (open-topic, immediate) `runs/.../data/ctikg_docs_meta.json`
+- (open-topic, immediate) `runs/.../scrape/scrape_log.csv`
+- (open-topic, manual post-run) `runs/.../llm4cti/Articles.xlsx`
+- (open-topic, manual post-run) `runs/.../llm4cti/llm4cti_articles.csv`
+- (open-topic, manual post-run) `runs/.../llm4cti/llm4cti_articles_meta.json`
 - (legacy) `exports/ctikg_input.csv`, `data/ctikg_docs_meta.json`, `results/scrape_log.csv`
-- optional triage packs in repo root (e.g., `Triage_*_top200.csv`)
+- optional triage packs generated at runtime (for manual review when needed)
 
 For a step‑by‑step walkthrough and what each target does, see:
 
@@ -140,6 +144,22 @@ Makefile
 
 More details and recovery steps are in **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)**.
 
+
+## Article-level notebook export (manual post-run step)
+
+`make open-topic` does **not** create `llm4cti/` notebook handoff files automatically.
+
+After a run completes, create them explicitly with:
+
+`python scripts/export_llm4cti_articles.py --run-dir runs/<SAFE_TOPIC>/<RUN_ID>`
+
+This writes:
+
+- `runs/<SAFE_TOPIC>/<RUN_ID>/llm4cti/Articles.xlsx`
+- `runs/<SAFE_TOPIC>/<RUN_ID>/llm4cti/llm4cti_articles.csv`
+- `runs/<SAFE_TOPIC>/<RUN_ID>/llm4cti/llm4cti_articles_meta.json`
+
+
 ---
 
 ## What “scrape” uses and how to be polite
@@ -157,7 +177,7 @@ The scraper supports two knobs that are surfaced by `make topic-scrape`:
 
 1) **Topics** (manual or LLM‑assisted) → `configs/categories/_generated/*.yaml`  
 2) **Link queue** (`make topic-pull` + `merge_dedup.py`) → `data/Links_Queue.csv`  
-3) **Flags/Triage** (`make_helper_flags.py`) → `data/Links_Queue_sorted_flags.csv`, `Triage_*_top200.csv`  
+3) **Flags/Triage** (`make_helper_flags.py`) → `data/Links_Queue_sorted_flags.csv` (+ optional runtime triage packs if enabled)  
 4) **Winners** (`make topic-select`) → `data/Selected_*.csv`  
 5) **Scrape** (`make topic-scrape`) → `results/scraped_corpus.jsonl` (+ `results/scrape_log.csv`)  
 6) **Export** (`export_ctikg_input.py` + `verify_export.py`) → `exports/ctikg_input.csv`, `data/ctikg_docs_meta.json`

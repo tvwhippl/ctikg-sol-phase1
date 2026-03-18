@@ -18,10 +18,18 @@ It writes all artifacts into an isolated per-run directory:
 
 - `runs/<SAFE_TOPIC>/<RUN_ID>/{config,queue,selection,scrape,artifacts,exports,data}`
 
-The stable interface into CTIKG / LLM4CTIKG is:
+Immediate run outputs are:
 
+- `runs/.../scrape/scraped_corpus.jsonl`
 - `runs/.../exports/ctikg_input.csv`
 - `runs/.../data/ctikg_docs_meta.json`
+
+Primary notebook handoff is a manual post-run export step:
+
+- `python scripts/export_llm4cti_articles.py --run-dir runs/<SAFE_TOPIC>/<RUN_ID>`
+- `runs/.../llm4cti/Articles.xlsx`
+- `runs/.../llm4cti/llm4cti_articles.csv`
+- `runs/.../llm4cti/llm4cti_articles_meta.json`
 
 Verify a run later with:
 
@@ -52,8 +60,8 @@ make verify RUN_DIR="runs/<SAFE_TOPIC>/<RUN_ID>"
   - normalizes column names (supports both `url/URL`, `title/Title`, etc.),
   - computes quick flags (`RepFlag`, `SigFlag`, `Quality2/4`),
   - writes `data/Links_Queue_sorted_flags.csv`,
-  - writes per‑category packs `Triage_*_top200.csv` and `Suggested_Selected_master.csv`.
-- These files help you eyeball the queue and adjust the category set if needed.
+  - can also write optional runtime triage packs for manual review.
+- These runtime triage files can help you eyeball the queue and adjust the category set if needed.
 
 ## Selection (`topic-select`)
 
