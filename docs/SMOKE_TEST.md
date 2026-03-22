@@ -1,10 +1,14 @@
 # Smoke tests
 
-Smoke tests are fast, end-to-end checks that catch the most common failure mode:
+Smoke tests are fast, repo-level checks that catch the most common failure mode:
 
-- “The pipeline ran, but produced no usable export rows.”
+- "The pipeline ran, but produced no usable export rows."
 
 They are meant to be run locally before pushing changes or kicking off larger runs.
+
+They validate the repo ingestion/export path, not the full downstream CTIKG / LLM4CTI platform.
+
+For output interpretation and success criteria, see `docs/OUTPUTS_CONTRACT.md`.
 
 ---
 

@@ -37,6 +37,10 @@ Verify a run later with:
 make verify RUN_DIR="runs/<SAFE_TOPIC>/<RUN_ID>"
 ```
 
+For output interpretation and success criteria, see `docs/OUTPUTS_CONTRACT.md`.
+
+For the canonical SOL staged-input and ranked-offset array pattern, see `docs/SOL_RUNBOOK.md`.
+
 ---
 
 ## Topics

@@ -1,19 +1,17 @@
-## Downstream handoff
-
-After a run completes, treat these outputs differently:
-
-Primary notebook handoff:
-- `scrape/scraped_corpus.jsonl`
-- `scripts/export_llm4cti_articles.py`
-- `<RUN_DIR>/llm4cti/Articles.xlsx`
-- `<RUN_DIR>/llm4cti/llm4cti_articles.csv`
-- `<RUN_DIR>/llm4cti/llm4cti_articles_meta.json`
-
-Secondary outputs:
-- `exports/ctikg_input.csv`
-- `scripts/run_simple_ctikg.py` (optional adapter)
-
 # Open Topic Pipeline Quickstart
+
+This is the recommended local or single-run workflow for this repo.
+
+Use it when you want:
+
+- one topic string
+- one isolated run directory
+- verified export artifacts
+- optional article-first downstream handoff after the run
+
+For output interpretation and success criteria, see `docs/OUTPUTS_CONTRACT.md`.
+
+For the canonical SOL staged-input and ranked-offset array pattern, see `docs/SOL_RUNBOOK.md`.
 
 This repo supports an **open topic** workflow.
 
@@ -47,6 +45,10 @@ Manual post-run notebook handoff (after running `scripts/export_llm4cti_articles
 Create notebook handoff files explicitly after the run:
 
 `python scripts/export_llm4cti_articles.py --run-dir runs/<SAFE_TOPIC>/<RUN_ID>`
+
+For output interpretation and success criteria, see `docs/OUTPUTS_CONTRACT.md`.
+
+For the canonical SOL operating pattern, staged inputs, and ranked-offset array usage, see `docs/SOL_RUNBOOK.md`.
 
 Re-verify a run later:
 

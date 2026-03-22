@@ -3,9 +3,12 @@
 Legacy fixed-path workflow.
 
 This document describes the older shared-path workflow under `data/`, `results/`, and `exports/`.
-For the recommended per-run open-topic path, use `docs/OPEN_TOPIC_QUICKSTART.md`.
 
-The short path from a fresh clone to a verified CSV export.
+For the recommended per-run open-topic workflow, use `docs/OPEN_TOPIC_QUICKSTART.md`.
+For output interpretation and success criteria, see `docs/OUTPUTS_CONTRACT.md`.
+For the canonical SOL staged-input and ranked-offset array path, see `docs/SOL_RUNBOOK.md`.
+
+The short path from a fresh clone to a verified CSV export in the legacy shared-path workflow.
 
 ## 0) Clone and set up Python
 

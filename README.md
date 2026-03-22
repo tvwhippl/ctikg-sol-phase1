@@ -15,7 +15,7 @@ Secondary paths:
 **Phase‑1 pipeline** to select topic‑focused CTI articles, scrape + triage them, and export inputs for CTIKG experiments.  
 Supports **Ollama** (local) and **OpenAI‑compatible** LLM endpoints (e.g., ASU Voyager).
 
-> Status: verified end‑to‑end (Ollama + OpenAI‑compatible backends) — see docs for exact env vars.
+> Status: verified for topic generation, bounded article acquisition, verified export, and downstream compatibility proof (Ollama + OpenAI-compatible backends) — see docs for exact env vars and scope boundaries.
 
 ---
 
@@ -94,8 +94,10 @@ Outputs to check:
 
 For a step‑by‑step walkthrough and what each target does, see:
 
-- **[docs/OPEN_TOPIC_QUICKSTART.md](docs/OPEN_TOPIC_QUICKSTART.md)** (open-topic pipeline; Ollama + Voyager)
-- **[docs/QUICKSTART.md](docs/QUICKSTART.md)** and **[docs/PIPELINE.md](docs/PIPELINE.md)** (phase‑1 pipeline background)
+- **[docs/OPEN_TOPIC_QUICKSTART.md](docs/OPEN_TOPIC_QUICKSTART.md)** (recommended per-run open-topic workflow)
+- **[docs/SOL_RUNBOOK.md](docs/SOL_RUNBOOK.md)** (canonical SOL staged + ranked-offset array pattern)
+- **[docs/OUTPUTS_CONTRACT.md](docs/OUTPUTS_CONTRACT.md)** (what outputs mean, which are primary, and what counts as a successful run)
+- **[docs/QUICKSTART.md](docs/QUICKSTART.md)** and **[docs/PIPELINE.md](docs/PIPELINE.md)** (legacy path and pipeline background)
 
 ---
 
