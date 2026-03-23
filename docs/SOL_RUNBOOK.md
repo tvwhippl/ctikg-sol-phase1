@@ -69,6 +69,31 @@ export OPENAI_API_KEY="YOUR_KEY"
 export LLM_MODEL="llama4-scout-17b"
 ```
 
+Notes:
+- create or copy your API key from the Voyager User Administration portal under `LLM Access`
+- choose a currently available Voyager model for `LLM_MODEL`
+- if these variables are unset, the topic-generation helper may fall back to Ollama defaults, which is not appropriate on a SOL login node
+
+Optional Python sanity check using the standard `openai` client:
+
+```bash
+python - <<'PY'
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://openai.rc.asu.edu/v1",
+    api_key="YOUR_KEY",
+)
+
+response = client.chat.completions.create(
+    model="llama4-scout-17b",
+    messages=[{"role": "user", "content": "ping"}],
+)
+
+print(response.choices[0].message.content)
+PY
+```
+
 For local dry-run smoke setup instead:
 
 ```bash

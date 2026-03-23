@@ -50,10 +50,26 @@ export LLM_BASE_URL="http://127.0.0.1:11434"
 
 ## Option B: OpenAI-compatible (e.g., ASU Voyager)
 
+# 1) Create or copy your API key from the Voyager User Administration portal
+#    under LLM Access.
+# 2) Choose a currently available model from the Voyager model list.
+# 3) Export env vars for this shell:
+
 export LLM_PROVIDER=openai
 export OPENAI_BASE_URL="https://openai.rc.asu.edu/v1"
 export OPENAI_API_KEY="YOUR_KEY"
-export LLM_MODEL="llama4-scout-17b"   # example; pick from the provider's model directory
+export LLM_MODEL="llama4-scout-17b"   # example; choose a current Voyager model
+
+# Optional Python sanity check using the standard openai client:
+# python - <<'PY'
+# from openai import OpenAI
+# client = OpenAI(base_url="https://openai.rc.asu.edu/v1", api_key="YOUR_KEY")
+# resp = client.chat.completions.create(
+#     model="llama4-scout-17b",
+#     messages=[{"role": "user", "content": "ping"}],
+# )
+# print(resp.choices[0].message.content)
+# PY
 
 # 3) One-command open-topic (recommended)
 make open-topic \

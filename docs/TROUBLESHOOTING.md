@@ -51,7 +51,12 @@ export OPENAI_API_KEY="YOUR_KEY"
 export LLM_MODEL="llama4-scout-17b"
 ```
 
-Optional connectivity check:
+Also verify:
+- your API key was created in the Voyager User Administration portal under `LLM Access`
+- `LLM_MODEL` matches a currently available Voyager model
+- you did not leave the variables empty, because the helper may otherwise fall back to Ollama defaults
+
+Optional connectivity checks:
 
 ```bash
 curl -s "$OPENAI_BASE_URL/chat/completions" \
@@ -61,12 +66,31 @@ curl -s "$OPENAI_BASE_URL/chat/completions" \
   | head
 ```
 
+```bash
+python - <<'PY'
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://openai.rc.asu.edu/v1",
+    api_key="YOUR_KEY",
+)
+
+response = client.chat.completions.create(
+    model="llama4-scout-17b",
+    messages=[{"role": "user", "content": "ping"}],
+)
+
+print(response.choices[0].message.content)
+PY
+```
+
 If you only want a smoke test without live provider calls, use:
 
 ```bash
 export LLM_PROVIDER=dry-run
 export LLM_MODEL=ignored
 ```
+
 
 ## 2) `make open-topic` created a run directory, but the run looks empty
 
