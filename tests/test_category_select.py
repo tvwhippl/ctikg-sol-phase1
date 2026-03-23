@@ -42,3 +42,20 @@ def test_hybrid_merges_duplicates(monkeypatch):
     labels = [r["label"].lower() for r in res]
     assert "remote code execution" in labels
     assert "credential theft" in labels
+
+
+def test_validate_topic_config_preserves_fallback_anchor_fields():
+    cfg = llm_mod._validate_topic_config(
+        {
+            "name": "SSH Credential Abuse and Lateral Movement",
+            "include": ["SSH credential abuse", "Private key compromise"],
+            "exclude": ["sports"],
+            "fallback_anchors": ["ssh", "openssh"],
+            "fallback_anchor_min_hits": 2,
+            "winners": 50,
+        },
+        default_name="SSH Credential Abuse and Lateral Movement",
+        default_winners=50,
+    )
+    assert cfg["fallback_anchors"] == ["ssh", "openssh"]
+    assert cfg["fallback_anchor_min_hits"] == 2

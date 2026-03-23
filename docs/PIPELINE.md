@@ -23,6 +23,16 @@ Immediate run outputs are:
 - `runs/.../scrape/scraped_corpus.jsonl`
 - `runs/.../exports/ctikg_input.csv`
 - `runs/.../data/ctikg_docs_meta.json`
+- `runs/.../selection/ranked.csv`
+- `runs/.../selection/selected.csv`
+- `runs/.../selection/selection_summary.json`
+
+The open-topic selector now enforces a quality gate for semantic fallback.
+By default, semantic fallback requires `QuerySim >= 0.005`, exclude-only fallback is off,
+and topic YAML may further restrict fallback with `fallback_anchors` and
+`fallback_anchor_min_hits`. Each run writes `selection/selection_summary.json`
+so the operator can see whether the topic filled, underfilled, or stopped after
+the quality gate.
 
 Primary notebook handoff is a manual post-run export step:
 

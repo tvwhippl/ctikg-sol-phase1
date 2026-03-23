@@ -86,6 +86,9 @@ Outputs to check:
 - (open-topic, immediate) `runs/.../exports/ctikg_input.csv`
 - (open-topic, immediate) `runs/.../data/ctikg_docs_meta.json`
 - (open-topic, immediate) `runs/.../scrape/scrape_log.csv`
+- (open-topic, immediate) `runs/.../selection/ranked.csv`
+- (open-topic, immediate) `runs/.../selection/selected.csv`
+- (open-topic, immediate) `runs/.../selection/selection_summary.json`
 - (open-topic, manual post-run) `runs/.../llm4cti/Articles.xlsx`
 - (open-topic, manual post-run) `runs/.../llm4cti/llm4cti_articles.csv`
 - (open-topic, manual post-run) `runs/.../llm4cti/llm4cti_articles_meta.json`
@@ -160,6 +163,14 @@ This writes:
 - `runs/<SAFE_TOPIC>/<RUN_ID>/llm4cti/Articles.xlsx`
 - `runs/<SAFE_TOPIC>/<RUN_ID>/llm4cti/llm4cti_articles.csv`
 - `runs/<SAFE_TOPIC>/<RUN_ID>/llm4cti/llm4cti_articles_meta.json`
+
+Selection quality gate:
+
+- semantic fallback now uses a positive minimum QuerySim threshold
+- exclude-only fallback is off by default
+- topic YAML may define `fallback_anchors` and `fallback_anchor_min_hits` to stop late-ranked junk
+- each run writes `runs/<SAFE_TOPIC>/<RUN_ID>/selection/selection_summary.json`
+- if selection is empty after the quality gate, the run stops before scraping
 
 
 ---

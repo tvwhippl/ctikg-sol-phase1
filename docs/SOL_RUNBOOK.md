@@ -28,6 +28,7 @@ Use this pattern on SOL:
    - `config/topic.yaml`
    - `queue/Links_Queue_sorted_flags.csv`
    - `selection/ranked.csv`
+   - `selection/selection_summary.json`
 4. In Slurm, run ranked-offset array tasks that only:
    - slice `ranked.csv` into `selected.csv`
    - scrape selected URLs
@@ -136,16 +137,22 @@ python scripts/category_select.py \
   --category "$STAGE_DIR/config/topic.yaml" \
   --ranked-out "$STAGE_DIR/selection/ranked.csv" \
   --selected-out "$STAGE_DIR/selection/selected_preview.csv" \
+  --selection-summary-out "$STAGE_DIR/selection/selection_summary.json" \
   --scrape-max "$SCRAPE_MAX" \
-  --offset 0
+  --offset 0 \
+  --min-qsim 0.005
 
 wc -l "$STAGE_DIR/selection/ranked.csv" "$STAGE_DIR/selection/selected_preview.csv"
+cat "$STAGE_DIR/selection/selection_summary.json"
 ```
 
 Notes:
 - `selected_preview.csv` is only a login-node sanity-check slice
-- the Slurm array jobs will slice from `selection/ranked.csv`
-- if `ranked.csv` is very small, reduce expectations or choose a better-supported topic before launching a larger array
+- `selection_summary.json` records why ranking filled, underfilled, or stopped on quality
+- if `topic.yaml` defines `fallback_anchors` and `fallback_anchor_min_hits`, fallback candidates must satisfy them
+- the Slurm array jobs will slice from the already quality-gated `selection/ranked.csv`
+- if `ranked.csv` is very small or empty, reduce expectations or tighten/adjust the topic before launching a larger array
+
 
 ## 3) Submit the ranked-offset array
 
@@ -208,6 +215,12 @@ Inspect representative run directories:
 find "runs/$SAFE_TOPIC/slurm-$JOBID" -maxdepth 2 -type d | sort
 ```
 
+Inspect the login-node selection summary first:
+
+```bash
+cat "runs/_stage/$SAFE_TOPIC/selection/selection_summary.json"
+```
+
 Inspect one representative shard:
 
 ```bash
@@ -241,6 +254,7 @@ Retain evidence outside `/tmp` and outside git:
 - staged `topic.yaml`
 - staged `Links_Queue_sorted_flags.csv`
 - staged `ranked.csv`
+- staged `selection_summary.json`
 - Slurm script used
 - `sacct` output for the array
 - representative `logs/*.out` and `logs/*.err`
@@ -257,12 +271,14 @@ Retain evidence outside `/tmp` and outside git:
 
 Expect this workflow to produce:
 - a bounded, auditable CTI article batch for a topic
+- a login-node `selection_summary.json` explaining whether ranking filled, underfilled, or stopped on quality
 - a verified sentence-level export
 - an article-first handoff path for the current notebook workflow
 
 Do not expect it to:
 - solve topic-ranking robustness for every topic
 - guarantee that every topic supports large ranked-offset batches
+- pad low-quality results just to hit `SCRAPE_MAX`
 - replace the downstream extraction notebook or package
 
 ## 8) Repeat-topic workflow

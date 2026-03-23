@@ -13,6 +13,8 @@ It reads:
         name: <string>
         include: ["kw1", "kw2", ...]
         exclude: ["kwA", ...]
+        fallback_anchors: ["anchor1", ...]      # optional
+        fallback_anchor_min_hits: <int>         # optional
         winners: <int>
 
 It writes:
@@ -181,6 +183,7 @@ def _format_out(df: pd.DataFrame, *, topic_name: str, fallback_used: bool, pool:
             "IncHits": df.get("__inc_hits", 0),
             "ExcHits": df.get("__exc_hits", 0),
             "QuerySim": df.get("__qsim", 0.0),
+            "AnchorHits": df.get("__anchor_hits", 0),
             "CandidatePool": pool,
             "FallbackUsed": fallback_used,
         }
@@ -197,7 +200,9 @@ def _select_winners(
     scrape_max: int | None = None,
     offset: int = 0,
     fill_to_winners: bool = False,
-    min_qsim: float = 0.0,
+    min_qsim: float = 0.005,
+    allow_exclude_only_fallback: bool = False,
+    selection_summary_path: str | None = None,
     rescue_underfill: bool = False,
     rescue_max_add: int = 0,
     rescue_min_qsim: float = 0.10,
@@ -205,6 +210,12 @@ def _select_winners(
     name = str(cat.get("name") or "Topic").strip()
     include = [str(x).strip() for x in (cat.get("include") or []) if str(x).strip()]
     exclude = [str(x).strip() for x in (cat.get("exclude") or []) if str(x).strip()]
+    fallback_anchors = [str(x).strip().lower() for x in (cat.get("fallback_anchors") or []) if str(x).strip()]
+    try:
+        fallback_anchor_min_hits = int(cat.get("fallback_anchor_min_hits") or 1)
+    except Exception:
+        fallback_anchor_min_hits = 1
+    fallback_anchor_min_hits = max(1, fallback_anchor_min_hits)
 
     winners_yaml = int(cat.get("winners") or 100)
     winners_yaml = max(1, winners_yaml)
@@ -223,6 +234,7 @@ def _select_winners(
     df["__exc_hits"] = df["__text"].apply(lambda t: _count_hits(t, exclude)) if exclude else 0
     df["__topic_score"] = df["__inc_hits"] - (2 * df["__exc_hits"])
     df["__qsim"] = 0.0
+    df["__anchor_hits"] = 0
 
     strict_mask = (df["__inc_hits"] > 0) & (df["__exc_hits"] == 0)
     strict_empty = not bool(strict_mask.any())
@@ -232,6 +244,26 @@ def _select_winners(
         query = " ".join([name] + include).strip()
         df["__qsim"] = _tfidf_query_sim(query, df["__text"].tolist())
 
+    if fallback_anchors:
+        df["__anchor_hits"] = df["__text"].apply(lambda t: _count_hits(t, fallback_anchors))
+
+    exclude_only_mask = df["__exc_hits"] == 0
+    anchor_mask = df["__anchor_hits"] > 0
+    anchor_gate_mask = df["__anchor_hits"] >= int(fallback_anchor_min_hits)
+    qsim_base_mask = (df["__qsim"] >= float(min_qsim)) & exclude_only_mask
+    qsim_mask = (qsim_base_mask & anchor_gate_mask) if fallback_anchors else qsim_base_mask
+
+    strict_count = int(strict_mask.sum())
+    anchor_count = int(anchor_mask.sum())
+    anchor_gate_count = int(anchor_gate_mask.sum()) if fallback_anchors else 0
+    qsim_base_count = int(qsim_base_mask.sum())
+    qsim_count = int(qsim_mask.sum())
+    qsim_rejected_by_anchor_count = int((qsim_base_mask & ~anchor_gate_mask).sum()) if fallback_anchors else 0
+    exclude_only_count = int(exclude_only_mask.sum())
+    non_excluded_below_qsim_count = int((exclude_only_mask & (df["__qsim"] < float(min_qsim))).sum())
+    positive_qsim_count = int((df["__qsim"] > 0).sum())
+    max_qsim = float(df["__qsim"].max()) if len(df) else 0.0
+
     cand = df[strict_mask].copy()
     fallback_used = False
     pool = "strict"
@@ -239,10 +271,10 @@ def _select_winners(
     if cand.empty:
         fallback_used = True
         pool = "fallback_qsim"
-        cand = df[(df["__qsim"] >= float(min_qsim)) & (df["__exc_hits"] == 0)].copy()
-        if cand.empty:
+        cand = df[qsim_mask].copy()
+        if cand.empty and bool(allow_exclude_only_fallback):
             pool = "fallback_exclude_only"
-            cand = df[df["__exc_hits"] == 0].copy()
+            cand = df[exclude_only_mask].copy()
 
     cand.sort_values(
         by=["__topic_score", "__qsim", "Quality4", "Quality2", "Score", "URL"],
@@ -348,6 +380,84 @@ def _select_winners(
     out_selected = _format_out(selected, topic_name=name, fallback_used=fallback_used, pool=pool)
     out_selected.to_csv(selected_path, index=False)
 
+    if len(ranked) == 0:
+        stop_reason = "no_candidates_passing_anchor_gate" if fallback_anchors else "no_candidates_passing_quality_gate"
+    elif offset >= len(ranked):
+        stop_reason = "offset_beyond_ranked_after_anchor_gate" if fallback_anchors else "offset_beyond_ranked_after_quality_gate"
+    elif len(selected) < cap:
+        if pool.startswith("strict"):
+            stop_reason = "underfilled_after_strict_topic_gate"
+        elif pool.startswith("fallback_qsim"):
+            stop_reason = "underfilled_after_anchor_gate" if fallback_anchors else "underfilled_after_qsim_quality_gate"
+        elif pool.startswith("fallback_exclude_only"):
+            stop_reason = "underfilled_after_exclude_only_fallback"
+        else:
+            stop_reason = "underfilled_after_quality_gate"
+    else:
+        if pool == "strict":
+            stop_reason = "filled_from_strict"
+        elif pool == "fallback_qsim":
+            stop_reason = "filled_from_qsim_anchor_fallback" if fallback_anchors else "filled_from_qsim_fallback"
+        elif pool == "fallback_exclude_only":
+            stop_reason = "filled_from_exclude_only_fallback"
+        else:
+            stop_reason = f"filled_from_{pool}"
+
+    summary = {
+        "topic": name,
+        "offset": int(offset),
+        "cap": int(cap),
+        "min_qsim": float(min_qsim),
+        "fallback_anchors": fallback_anchors,
+        "fallback_anchor_min_hits": int(fallback_anchor_min_hits),
+        "allow_exclude_only_fallback": bool(allow_exclude_only_fallback),
+        "fallback_used": bool(fallback_used),
+        "candidate_pool": pool,
+        "strict_candidate_count": strict_count,
+        "anchor_candidate_count": anchor_count,
+        "anchor_gate_candidate_count": anchor_gate_count,
+        "qsim_base_candidate_count": qsim_base_count,
+        "qsim_candidate_count": qsim_count,
+        "qsim_rejected_by_anchor_count": qsim_rejected_by_anchor_count,
+        "exclude_only_candidate_count": exclude_only_count,
+        "non_excluded_below_qsim_count": non_excluded_below_qsim_count,
+        "positive_qsim_count": positive_qsim_count,
+        "max_qsim": max_qsim,
+        "ranked_rows": int(len(ranked)),
+        "selected_rows": int(len(selected)),
+        "stop_reason": stop_reason,
+        "rescue_underfill": bool(rescue_underfill),
+        "rescue_max_add": int(rescue_max_add or 0),
+        "rescue_min_qsim": float(rescue_min_qsim),
+    }
+
+    summary_path = selection_summary_path
+    if not summary_path:
+        sp = Path(selected_path)
+        summary_path = str(sp.with_suffix(".selection_summary.json")) if sp.suffix else str(sp.with_name(sp.name + ".selection_summary.json"))
+
+    summary_file = Path(summary_path)
+    summary_file.parent.mkdir(parents=True, exist_ok=True)
+
+    import json
+    summary_file.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    logger.info(
+        "Selection summary: stop_reason=%s strict=%s anchors_any=%s anchors_gate=%s qsim_base=%s qsim=%s ranked=%s selected=%s min_qsim=%s anchor_min_hits=%s allow_exclude_only_fallback=%s -> %s",
+        stop_reason,
+        strict_count,
+        anchor_count,
+        anchor_gate_count,
+        qsim_base_count,
+        qsim_count,
+        len(ranked),
+        len(selected),
+        float(min_qsim),
+        int(fallback_anchor_min_hits),
+        bool(allow_exclude_only_fallback),
+        summary_path,
+    )
+
     return out_selected, fallback_used, cap, len(ranked)
 
 def run(
@@ -360,7 +470,9 @@ def run(
     scrape_max: int | None = None,
     offset: int = 0,
     fill_to_winners: bool = False,
-    min_qsim: float = 0.0,
+    min_qsim: float = 0.005,
+    allow_exclude_only_fallback: bool = False,
+    selection_summary_path: str | None = None,
     rescue_underfill: bool = False,
     rescue_max_add: int = 0,
     rescue_min_qsim: float = 0.10,
@@ -398,6 +510,8 @@ def run(
         offset=int(offset or 0),
         fill_to_winners=bool(fill_to_winners),
         min_qsim=float(min_qsim),
+        allow_exclude_only_fallback=bool(allow_exclude_only_fallback),
+        selection_summary_path=selection_summary_path,
         rescue_underfill=bool(rescue_underfill),
         rescue_max_add=int(rescue_max_add or 0),
         rescue_min_qsim=float(rescue_min_qsim),
@@ -437,8 +551,18 @@ def main() -> None:
     ap.add_argument(
         "--min-qsim",
         type=float,
-        default=0.0,
-        help="Minimum TF-IDF similarity score for semantic fallback/fill. Default 0.0 (legacy).",
+        default=0.005,
+        help="Minimum TF-IDF similarity score for semantic fallback/fill. Default 0.005.",
+    )
+    ap.add_argument(
+        "--allow-exclude-only-fallback",
+        action="store_true",
+        help="Allow a final exclude-only fallback when strict and semantic fallback produce no candidates. Default off.",
+    )
+    ap.add_argument(
+        "--selection-summary-out",
+        default=None,
+        help="Write selection audit JSON. Default: alongside selected CSV as *.selection_summary.json.",
     )
     ap.add_argument(
         "--rescue-underfill",
@@ -472,6 +596,8 @@ def main() -> None:
         offset=int(args.offset or 0),
         fill_to_winners=bool(args.fill_to_winners),
         min_qsim=float(args.min_qsim),
+        allow_exclude_only_fallback=bool(args.allow_exclude_only_fallback),
+        selection_summary_path=args.selection_summary_out,
         rescue_underfill=bool(args.rescue_underfill),
         rescue_max_add=int(args.rescue_max_add or 0),
         rescue_min_qsim=float(args.rescue_min_qsim),

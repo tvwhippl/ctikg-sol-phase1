@@ -49,6 +49,7 @@ Within that run directory, the primary immediate outputs are:
 - `queue/Links_Queue_sorted_flags.csv`
 - `selection/ranked.csv`
 - `selection/selected.csv`
+- `selection/selection_summary.json`
 - `scrape/scraped_corpus.jsonl`
 - `scrape/scrape_log.csv`
 - `scrape/scrape_stats.json`
@@ -85,13 +86,19 @@ Interpretation:
 
 ### 3) SOL ranked-offset array outputs
 
-For the canonical SOL pattern, each array shard writes an isolated run directory:
+For the canonical SOL pattern, the **login-node stage** produces the ranked inputs first:
+
+- `runs/_stage/<SAFE_TOPIC>/config/topic.yaml`
+- `runs/_stage/<SAFE_TOPIC>/queue/Links_Queue_sorted_flags.csv`
+- `runs/_stage/<SAFE_TOPIC>/selection/ranked.csv`
+- `runs/_stage/<SAFE_TOPIC>/selection/selection_summary.json`
+
+Then each array shard writes an isolated run directory:
 
 - `runs/<SAFE_TOPIC>/slurm-<JOBID>/offset_<OFFSET>/`
 
-Each shard should contain the same core output families as a normal per-run path:
+Each shard contains the shard-specific outputs:
 
-- staged copies of topic/queue/ranked inputs needed for audit
 - `selection/selected.csv`
 - `scrape/scraped_corpus.jsonl`
 - `scrape/scrape_log.csv`
@@ -100,7 +107,10 @@ Each shard should contain the same core output families as a normal per-run path
 - `data/ctikg_docs_meta.json`
 - `manifest.json`
 
-The article-first `llm4cti/` files remain a manual post-run export step.
+Important:
+- `selection_summary.json` belongs to the login-node stage, not the shard
+- shard absence of `selection_summary.json` is expected
+- the article-first `llm4cti/` files remain a manual post-run export step
 
 ## Which outputs are primary
 
@@ -158,11 +168,16 @@ Interpretation:
 A run is minimally successful when all of the following are true:
 
 - `selection/selected.csv` contains rows
+- `selection/selection_summary.json` exists for the open-topic per-run path
 - `scrape/scraped_corpus.jsonl` exists and is non-empty
 - `exports/ctikg_input.csv` exists
 - `data/ctikg_docs_meta.json` exists
 - `manifest.json` exists
 - the export passes `scripts/verify_export.py`
+
+For the canonical SOL path:
+- `selection_summary.json` belongs to the login-node stage under `runs/_stage/<SAFE_TOPIC>/selection/`
+- array shards are expected to contain `selection/selected.csv` rather than a per-shard selection summary
 
 A run may still be acceptable when:
 
@@ -177,9 +192,11 @@ A run is not complete for current notebook handoff until the article-first `llm4
 Interpret outputs this way:
 
 - empty `selection/selected.csv` in the normal open-topic path is a run failure
+- `selection/selection_summary.json` with `no_candidates_passing_quality_gate` or `no_candidates_passing_anchor_gate` means the selector stopped on quality, not that it silently padded junk
+- underfilled selection with `underfilled_after_*` stop reasons is usually a topic/ranking limitation, not a scrape failure
 - an array shard whose offset is beyond the ranked pool is a clean no-op, not a failure
 - missing `llm4cti/` files alone do not mean the scrape/export failed
-- underfilled selection is a topic/ranking limitation unless logs show an actual execution fault
+- on SOL, missing shard-level `selection_summary.json` is expected because the summary is produced during the login-node stage
 - shard failures should be diagnosed from Slurm logs, `sacct`, and run artifacts rather than inferred from a single missing output
 
 ## Storage and git rules

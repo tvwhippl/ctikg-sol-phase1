@@ -70,27 +70,29 @@ export LLM_MODEL=ignored
 
 ## 2) `make open-topic` created a run directory, but the run looks empty
 
-Use the `run_dir` printed at the end of the command. Then inspect the staged outputs in order.
+Use the `run_dir` printed at the end of the command. Then inspect the selection outputs first.
 
 ```bash
 RUN_DIR="runs/<SAFE_TOPIC>/<RUN_ID>"
 
 wc -l "$RUN_DIR/selection/ranked.csv" "$RUN_DIR/selection/selected.csv"
-head -n 5 "$RUN_DIR/scrape/scrape_log.csv"
-ls -lh "$RUN_DIR/scrape/scraped_corpus.jsonl" "$RUN_DIR/exports/ctikg_input.csv" "$RUN_DIR/data/ctikg_docs_meta.json"
+cat "$RUN_DIR/selection/selection_summary.json"
+head -n 5 "$RUN_DIR/scrape/scrape_log.csv" 2>/dev/null || true
+ls -lh "$RUN_DIR/scrape/scraped_corpus.jsonl" "$RUN_DIR/exports/ctikg_input.csv" "$RUN_DIR/data/ctikg_docs_meta.json" 2>/dev/null || true
 ```
 
 Interpretation:
-- empty `ranked.csv` means the queue/ranking path did not produce viable candidates
-- non-empty `ranked.csv` but empty `selected.csv` means selection failed
+- empty `ranked.csv` with `selection_summary.json` showing `no_candidates_passing_quality_gate` or `no_candidates_passing_anchor_gate` means the selector stopped on quality
+- non-empty `ranked.csv` but empty `selected.csv` means the requested `OFFSET` is beyond the quality-gated ranked pool
 - non-empty `selected.csv` but empty scrape/export outputs means scraping failed or produced no usable article text
 
 Useful follow-up checks:
 
 ```bash
-sed -n '1,200p' "$RUN_DIR/manifest.json"
+sed -n '1,200p' "$RUN_DIR/manifest.json" 2>/dev/null || true
 head -n 20 "$RUN_DIR/selection/selected.csv"
-head -n 20 "$RUN_DIR/scrape/scrape_log.csv"
+cat "$RUN_DIR/selection/selection_summary.json"
+head -n 20 "$RUN_DIR/scrape/scrape_log.csv" 2>/dev/null || true
 ```
 
 ## 3) Selection is underfilled
@@ -109,12 +111,15 @@ What to inspect:
 RUN_DIR="runs/<SAFE_TOPIC>/<RUN_ID>"
 
 wc -l "$RUN_DIR/selection/ranked.csv" "$RUN_DIR/selection/selected.csv"
+cat "$RUN_DIR/selection/selection_summary.json"
 head -n 20 "$RUN_DIR/selection/ranked.csv"
 ```
 
 What to do next:
+- read `stop_reason` in `selection_summary.json`
+- if `qsim_rejected_by_anchor_count` is large, the topic or anchors are admitting too much broad content before the gate
 - reduce expectations for that topic
-- try a narrower or better-supported topic
+- tighten `fallback_anchors` or raise `fallback_anchor_min_hits` if single-anchor matches are still too broad
 - prefer a smaller relevant batch over padding low-quality links
 
 ## 4) SOL array job issues
@@ -151,10 +156,17 @@ sed -n '1,160p' "$RUN_DIR/manifest.json" 2>/dev/null || true
 head -n 20 "$RUN_DIR/scrape/scrape_log.csv" 2>/dev/null || true
 ```
 
+Also inspect the login-node stage summary for the topic:
+
+```bash
+cat "runs/_stage/<SAFE_TOPIC>/selection/selection_summary.json" 2>/dev/null || true
+```
+
 Interpretation:
 - failed Slurm state + missing run outputs usually means execution failed before completion
 - completed Slurm state + missing `llm4cti/` outputs usually just means the manual article-export step was not run yet
 - empty shard output with an offset beyond the ranked pool can be a clean no-op rather than a real failure
+- `selection_summary.json` belongs to the login-node stage, not the shard
 
 ### Arrays should not call LLM generation
 

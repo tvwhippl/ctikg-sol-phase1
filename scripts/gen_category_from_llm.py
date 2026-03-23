@@ -254,7 +254,7 @@ class LLMClient:
         max_tokens: Optional[int] = None,
         max_queries: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Return a dict with keys: name/include/exclude/winners."""
+        """Return a dict with keys: name/include/exclude/fallback_anchors/fallback_anchor_min_hits/winners."""
         if self.dry_run or self.provider in {"dry-run", "dryrun", "mock"}:
             return _canned_topic_config(topic=topic, winners=winners)
 
@@ -266,8 +266,12 @@ class LLMClient:
             "instruction": (
                 "You generate a single topic configuration for a security-news curation pipeline. "
                 "Return ONLY a JSON object with keys: "
-                "name (string), include (array of strings), exclude (array of strings), winners (integer). "
+                "name (string), include (array of strings), exclude (array of strings), "
+                "fallback_anchors (array of strings), fallback_anchor_min_hits (integer), winners (integer). "
                 "Rules: include should be 8-15 short keyword phrases; exclude should be 5-12 phrases; "
+                "fallback_anchors should be 2-6 high-precision substrings or short phrases used to gate semantic fallback admission; "
+                "prefer product, protocol, service, or compound terms; avoid generic single words like credential, attack, vulnerability, or exploit unless paired; "
+                "fallback_anchor_min_hits should be 1 or 2; "
                 "Include both acronyms/abbreviations (e.g., RCE, SSRF, XSS) AND their expanded forms when applicable; "
                 "avoid overly generic words; keep phrases <= 4 words; no prose outside JSON."
             ),
@@ -452,6 +456,8 @@ def _canned_topic_config(topic: str, winners: int = 100) -> Dict[str, Any]:
         "name": topic.strip() or "Topic",
         "include": include[:15],
         "exclude": exclude,
+        "fallback_anchors": [],
+        "fallback_anchor_min_hits": 1,
         "winners": int(winners),
     }
 
@@ -469,6 +475,18 @@ def _validate_topic_config(obj: Dict[str, Any], default_name: str, default_winne
         exclude = []
     exclude = [str(x).strip() for x in exclude if str(x).strip()]
 
+    fallback_anchors = obj.get("fallback_anchors")
+    if not isinstance(fallback_anchors, list):
+        fallback_anchors = []
+    fallback_anchors = [str(x).strip() for x in fallback_anchors if str(x).strip()]
+
+    fallback_anchor_min_hits = obj.get("fallback_anchor_min_hits", 1)
+    try:
+        fallback_anchor_min_hits = int(fallback_anchor_min_hits)
+    except Exception:
+        fallback_anchor_min_hits = 1
+    fallback_anchor_min_hits = max(1, min(fallback_anchor_min_hits, 5))
+
     winners = obj.get("winners", default_winners)
     try:
         winners = int(winners)
@@ -481,6 +499,8 @@ def _validate_topic_config(obj: Dict[str, Any], default_name: str, default_winne
         "name": name,
         "include": include,
         "exclude": exclude,
+        "fallback_anchors": fallback_anchors,
+        "fallback_anchor_min_hits": fallback_anchor_min_hits,
         "winners": winners,
     }
 

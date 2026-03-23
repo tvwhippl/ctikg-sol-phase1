@@ -36,6 +36,9 @@ Immediate outputs:
 - `runs/.../scrape/scraped_corpus.jsonl`
 - `runs/.../exports/ctikg_input.csv`
 - `runs/.../data/ctikg_docs_meta.json`
+- `runs/.../selection/ranked.csv`
+- `runs/.../selection/selected.csv`
+- `runs/.../selection/selection_summary.json`
 
 Manual post-run notebook handoff (after running `scripts/export_llm4cti_articles.py`):
 - `runs/.../llm4cti/Articles.xlsx`
@@ -45,6 +48,14 @@ Manual post-run notebook handoff (after running `scripts/export_llm4cti_articles
 Create notebook handoff files explicitly after the run:
 
 `python scripts/export_llm4cti_articles.py --run-dir runs/<SAFE_TOPIC>/<RUN_ID>`
+
+Selection quality gate:
+
+- semantic fallback uses `--min-qsim` with a positive default
+- exclude-only fallback is off by default
+- if `topic.yaml` defines `fallback_anchors` and `fallback_anchor_min_hits`, fallback candidates must satisfy them
+- inspect `runs/<SAFE_TOPIC>/<RUN_ID>/selection/selection_summary.json` to see why ranking filled, underfilled, or stopped
+- underfill is acceptable; do not pad junk just to hit `SCRAPE_MAX`
 
 For output interpretation and success criteria, see `docs/OUTPUTS_CONTRACT.md`.
 

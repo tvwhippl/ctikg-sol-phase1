@@ -23,6 +23,9 @@ RUNS_ROOT   ?= runs
 SCRAPE_MAX  ?= 50
 OFFSET     ?= 0
 
+# Selection quality gate
+SELECTION_MIN_QSIM ?= 0.005
+
 # Scrape cache (safe-by-default for v1 open-topic: enabled)
 SCRAPE_CACHE ?= 1
 SCRAPE_CACHE_DB ?= .cache/ctikg/scrape_cache.sqlite
@@ -210,10 +213,15 @@ open-topic:
 			--category "$$RUN_DIR/config/topic.yaml" \
 			--ranked-out "$$RUN_DIR/selection/ranked.csv" \
 			--selected-out "$$RUN_DIR/selection/selected.csv" \
+			--selection-summary-out "$$RUN_DIR/selection/selection_summary.json" \
 			--scrape-max $(SCRAPE_MAX) \
 			--offset $(OFFSET) \
+			--min-qsim $(SELECTION_MIN_QSIM) \
 			$(if $(filter 1,$(RESCUE)),--rescue-underfill --rescue-max-add $(RESCUE_MAX_ADD) --rescue-min-qsim $(RESCUE_MIN_QSIM)); \
-		wc -l "$$RUN_DIR/selection/selected.csv" | awk '{ if ($$1 <= 1) { print "ERROR: selection empty"; exit 2 } }'; \
+		if [ "$$(wc -l < "$$RUN_DIR/selection/selected.csv")" -le 1 ]; then \
+			echo "ERROR: selection empty after topic quality gate; see $$RUN_DIR/selection/selection_summary.json"; \
+			exit 2; \
+		fi; \
 		DUR_SELECT=$$(( $$(date +%s) - t_step )); \
 		\
 		t_step=$$(date +%s); \
