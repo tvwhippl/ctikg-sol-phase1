@@ -182,6 +182,10 @@ export LLM_BASE_URL="http://127.0.0.1:11434"
 
 ### Provider: ASU Voyager (OpenAI-compatible)
 
+https://voyager.rc.asu.edu/
+
+https://docs.rc.asu.edu/ai/api/
+
 1) Create or copy your API key from the Voyager User Administration portal under `LLM Access`.
 2) Choose a currently available model from Voyager.
 3) Export env vars:
